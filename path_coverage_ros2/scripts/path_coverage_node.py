@@ -1,12 +1,6 @@
-#!/usr/bin/env python3
-
-
-# ----------- be careful!! export ROS_DOMAIN_ID=2
-# . /usr/share/gazebo/setup.sh; source /opt/ros/humble/setup.bash; source ros2_ws/install/setup.bash; ros2 run path_coverage path_coverage_node.py
-
-
-
-
+#!/usr/bin/python3
+#export ROS_DOMAIN_ID=0
+import sys
 import os
 import numpy as np
 import pdb
@@ -88,16 +82,15 @@ class MapDrive(Node):
 		self.global_costmap = None
 		self.goal_handle = None
 		self.result_future = None
-		self.feedback = None
 		
-		self.declare_parameter("global_frame", "map")
-		self.declare_parameter("robot_width", 0.3) 
-		self.declare_parameter("costmap_max_non_lethal", 70)
-		self.declare_parameter("boustrophedon_decomposition", True)
-		self.declare_parameter("border_drive", False)
-		self.declare_parameter("base_frame", "base_footprint")
-		self.declare_parameter("num_points", 2) 
-		self.declare_parameter("min_wp_dist", 0.5) 
+		self.declare_parameter("global_frame", "map")          # 全局坐标系，默认map（规划参考坐标系）
+		self.declare_parameter("robot_width", 0.2)             # 机器人宽度（单位：米），用于路径间距/避障计算
+		self.declare_parameter("costmap_max_non_lethal", 70)   # 代价地图非致命阈值(0-255)，≤70为可通行区域
+		self.declare_parameter("boustrophedon_decomposition", True)  # 是否启用之字形区域分解（覆盖规划算法）
+		self.declare_parameter("border_drive", False)          # 是否先沿覆盖区域边界行驶（覆盖规划辅助）
+		self.declare_parameter("base_frame", "base_footprint") # 机器人基坐标系，默认base_footprint（坐标变换用）
+		self.declare_parameter("num_points", 2)                # 路径段插值采样点数，影响路径平滑度
+		self.declare_parameter("min_wp_dist", 0.3)             # 最小航点间距（单位：米），过滤密集航点
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value
@@ -307,7 +300,9 @@ class MapDrive(Node):
 				with open(self.filename, "w") as f:
 					yaml.dump(self.pose_output, f)
 				self.pose_output = {}	
+				# 路径覆盖完成，结束线程
 				self.get_logger().info("this signifies the end afterwhich everything is cleaned")
+
 				return
 			self.get_logger().info("i got here 6:")
 		self.visualize_area(points, close=False)
@@ -800,10 +795,7 @@ class MapDrive(Node):
 			self.get_logger().info("o_o 10: ") # -------------------------------------
 			# 调用NavigateToPose动作来移动到目标点
 			self.navigate_to_pose(pos_next[0], pos_next[1], angle)
-			
-			# self.get_logger().info('EDGE1: x: ' + str(pos_last[0]) + ', y: ' + str(pos_last[1]) + ', th: '+ str(angle) + '.')
-			time.sleep(0.7)
-		
+
 		self.get_logger().info("o_o 11: ")
 		self.visualize_path(path, False)
 		self.get_logger().info("drive path completed...") # -------------------------------------
@@ -838,30 +830,48 @@ class MapDrive(Node):
 
 		# 发送目标
 		self.get_logger().info(f'Sending goal: x={x:.2f}, y={y:.2f}, angle={angle:.2f}')
-		send_goal_future = self.navigate_to_pose_client.send_goal_async(goal_msg)
 		
-		# 等待目标被接受
-		rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=10)
-		goal_handle = send_goal_future.result()
+		# 初始化反馈状态变量
+		self.navigation_finished = False
+		self.navigation_succeeded = False
+		self.last_feedback_time = time.time()
 		
-		if not goal_handle.accepted:
-			self.get_logger().error('Goal was rejected!')
+		# 使用异步方式发送目标，带反馈回调
+		self.navigate_to_pose_client.send_goal_async(
+			goal_msg,
+			feedback_callback=self.feedback_callback)
+		
+		# 等待导航完成，最多60秒
+		start = time.time()
+		while not self.navigation_finished and (time.time() - start) < 60.0:
+			rclpy.spin_once(self, timeout_sec=0.1)
+			# 如果超过5秒没有收到反馈，则认为导航完成
+			if time.time() - self.last_feedback_time > 5.0:
+				self.navigation_finished = True
+				self.navigation_succeeded = True
+				
+		if not self.navigation_finished:
+			self.get_logger().warn("Navigation timed out!")
 			return False
+			
+		return self.navigation_succeeded
 
-		# 等待结果
-		result_future = goal_handle.get_result_async()
-		rclpy.spin_until_future_complete(self, result_future, timeout_sec=60)
+	def feedback_callback(self, feedback_msg):
+		"""
+		处理导航过程中的反馈信息
+		"""
+		# 更新最后收到反馈的时间
+		self.last_feedback_time = time.time()
 		
-		status = result_future.result().status
-		if status == GoalStatus.STATUS_SUCCEEDED:
-			self.get_logger().info('Successfully reached the goal!')
-			return True
-		else:
-			self.get_logger().warn(f'Failed to reach the goal. Status: {status}')
-			return False
-
-
-
+		# 处理反馈信息
+		feedback = feedback_msg.feedback
+		self.get_logger().debug(f'Distance remaining: {feedback.distance_remaining:.2f} meters')
+		
+		# 当距离非常小时，认为已经到达目标
+		# 可以根据实际需要调整这个阈值
+		if feedback.distance_remaining < 0.15:
+			self.navigation_finished = True
+			self.navigation_succeeded = True
 
 
 
