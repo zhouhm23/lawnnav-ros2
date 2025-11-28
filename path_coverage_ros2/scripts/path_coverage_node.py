@@ -1,4 +1,11 @@
 #!/usr/bin/python3
+# 路径覆盖算法进度
+# 原理：要覆盖的区域由一个多边形给出，其点从RViz使用“Publish Point”设置。当连续点等于第一个点时，多边形区域通过一种类似于Boustrophedon细胞分解[1]的算法划分为多个单元格，因此每个单元格都可以通过简单的往返运动来覆盖。然后将生成的目标点交给导航堆栈。
+# 进度：实现rviz规划多边形，实现细胞分解, 实现规划路径，实现发布导航点
+# 问题：路径覆盖的移动过程不够连贯，修正次数过多，覆盖率不够高
+# TODO
+# 检查目标点方法有待改进，只判断距离<0.15不能与navigation/config/nav2_controller_teb.yaml的xy_goal_tolerance配置一致
+# 不知道为什么goal_future=self.navigate_to_pose_client.send_goal_async始终是none
 #export ROS_DOMAIN_ID=0
 import sys
 import os
@@ -83,14 +90,14 @@ class MapDrive(Node):
 		self.goal_handle = None
 		self.result_future = None
 		
-		self.declare_parameter("global_frame", "map")          # 全局坐标系，默认map（规划参考坐标系）
-		self.declare_parameter("robot_width", 0.2)             # 机器人宽度（单位：米），用于路径间距/避障计算
-		self.declare_parameter("costmap_max_non_lethal", 70)   # 代价地图非致命阈值(0-255)，≤70为可通行区域
-		self.declare_parameter("boustrophedon_decomposition", True)  # 是否启用之字形区域分解（覆盖规划算法）
-		self.declare_parameter("border_drive", False)          # 是否先沿覆盖区域边界行驶（覆盖规划辅助）
-		self.declare_parameter("base_frame", "base_footprint") # 机器人基坐标系，默认base_footprint（坐标变换用）
-		self.declare_parameter("num_points", 2)                # 路径段插值采样点数，影响路径平滑度
-		self.declare_parameter("min_wp_dist", 0.3)             # 最小航点间距（单位：米），过滤密集航点
+		self.declare_parameter("global_frame", "map")
+		self.declare_parameter("robot_width", 0.6) 
+		self.declare_parameter("costmap_max_non_lethal", 70)
+		self.declare_parameter("boustrophedon_decomposition", True)
+		self.declare_parameter("border_drive", False)
+		self.declare_parameter("base_frame", "base_footprint")
+		self.declare_parameter("num_points", 2) 
+		self.declare_parameter("min_wp_dist", 4.5) 
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value
@@ -286,7 +293,14 @@ class MapDrive(Node):
 				#self.get_logger().info("i got here 00")
 				if self.boustrophedon_decomposition:
 					self.get_logger().info("do_boustrophedon initiated...")
-					self.do_boustrophedon(Polygon(points), self.global_costmap)
+					# Wait for global costmap to be available before planning
+					while self.global_costmap is None and rclpy.ok():
+						self.get_logger().info("Waiting for global costmap to become available...")
+						rclpy.spin_once(self, timeout_sec=1.0)
+					if self.global_costmap:
+						self.do_boustrophedon(Polygon(points), self.global_costmap)
+					else:
+						self.get_logger().error("Global costmap not available, cannot perform Boustrophedon decomposition.")
 				else:
 					self.get_logger().info("drive_polygon initiated...")
 					self.drive_polygon(Polygon(points))
@@ -302,7 +316,7 @@ class MapDrive(Node):
 				self.pose_output = {}	
 				# 路径覆盖完成，结束线程
 				self.get_logger().info("this signifies the end afterwhich everything is cleaned")
-
+				self.destroy_node() # Stop the node, which will cause rclpy.spin() to exit
 				return
 			self.get_logger().info("i got here 6:")
 		self.visualize_area(points, close=False)
@@ -447,6 +461,10 @@ class MapDrive(Node):
 
 
 	def do_boustrophedon(self, poly, costmap):
+		# Check if costmap is valid
+		if costmap is None:
+			self.get_logger().error("Boustrophedon decomposition failed: costmap is None.")
+			return
 		# Cut polygon area from costmap
 		self.get_logger().info("do_boustrophedon() 1: ") # -------------------------------------
 		(minx, miny, maxx, maxy) = poly.bounds
@@ -456,24 +474,26 @@ class MapDrive(Node):
 		#self.get_logger().info("3: ", minx, miny, maxx, maxy) # -------------------------------------
 		#self.get_logger().info("3.5: ", costmap.info.origin.position.x, costmap.info.origin.position.y, costmap.info.resolution) # -------------------------------------
 		#self.get_logger().info(" ")
-		# Convert to costmap coordinate
-		minx = round((minx-costmap.info.origin.position.x)/costmap.info.resolution)
-		maxx = round((maxx-costmap.info.origin.position.x)/costmap.info.resolution)
-		miny = round((miny-costmap.info.origin.position.y)/costmap.info.resolution)
-		maxy = round((maxy-costmap.info.origin.position.y)/costmap.info.resolution)
+		# Convert to costmap coordinate using floor/ceil to avoid empty ranges
+		from math import floor, ceil
+		minx_idx = int(max(0, floor((minx - costmap.info.origin.position.x) / costmap.info.resolution)))
+		maxx_idx = int(min(costmap.info.width - 1, ceil((maxx - costmap.info.origin.position.x) / costmap.info.resolution)))
+		miny_idx = int(max(0, floor((miny - costmap.info.origin.position.y) /costmap.info.resolution)))
+		maxy_idx = int(min(costmap.info.height - 1, ceil((maxy - costmap.info.origin.position.y) / costmap.info.resolution)))
+		self.get_logger().info(f"do_boustrophedon costmap idx bounds: x {minx_idx}..{maxx_idx}, y {miny_idx}..{maxy_idx}")
 		self.get_logger().info("do_boustrophedon() 4: ") # -------------------------------------
-		# Check min/max limits
-		if minx < 0: minx = 0
-		if maxx > costmap.info.width: maxx = costmap.info.width
-		if miny < 0: miny = 0
-		if maxy > costmap.info.height: maxy = costmap.info.height
+		# Check empty region
+		if maxx_idx < minx_idx or maxy_idx < miny_idx:
+			self.get_logger().warn("Converted costmap bounds are empty -> no cells to decompose")
+			return
 		self.get_logger().info("do_boustrophedon() 5: ") # -------------------------------------
 		# Transform costmap values to values expected by boustrophedon_decomposition script
 		rows = []
-		for ix in range(int(minx), int(maxx)):
+		# iterate inclusive indices
+		for ix in range(minx_idx, maxx_idx + 1):
 			# self.get_logger().info("6: ") # -------------------------------------
 			column = []
-			for iy in range(int(miny), int(maxy)):
+			for iy in range(miny_idx, maxy_idx + 1):
 				x = ix*costmap.info.resolution+costmap.info.origin.position.x
 				y = iy*costmap.info.resolution+costmap.info.origin.position.y
 				data = costmap.data[int(iy*costmap.info.width+ix)]
@@ -493,21 +513,22 @@ class MapDrive(Node):
 		# self.get_logger().info("=..................=") 
 
 		polygons = []
-		with tempfile.NamedTemporaryFile(delete=False,mode='w') as ftmp:
+		# dump rows for debugging and allow manual inspection / ruby run
+		with tempfile.NamedTemporaryFile(delete=False,mode='w', suffix='.json') as ftmp:
 			ftmp.write(json.dumps(rows))
 			ftmp.flush()
+			self.get_logger().info(f"Saved decomposition input to {ftmp.name}")
 
-		#	print("8: ") # -------------------------------------
-			
-			boustrophedon_script = os.path.join(self.rospack, "scripts/boustrophedon_decomposition.rb") # boustrophedon_script = os.path.join(self.rospack.get_path('path_coverage'), "scripts/boustrophedon_decomposition.rb")
-			
-		#	print("9: ") # -------------------------------------
+			boustrophedon_script = os.path.join(self.rospack, "scripts/boustrophedon_decomposition.rb")
 
 			try:
 				result = subprocess.run(["ruby", boustrophedon_script, ftmp.name], capture_output=True, text=True)
 				polygons = json.loads(result.stdout)
 			except subprocess.CalledProcessError as e:
-				print("**** Error: ", e)
+				self.get_logger().error(f"Boustrophedon script error: {e}")
+				self.get_logger().error(f"stderr: {e.stderr if hasattr(e, 'stderr') else ''}")
+			except Exception as e:
+				self.get_logger().error(f"Failed to run/parsing boustrophedon script: {e}")
 
 
 		#self.get_logger().info("10: ") # -------------------------------------
@@ -521,8 +542,8 @@ class MapDrive(Node):
 			print("poly")
 			points = [
 					(
-					(point[0]+minx)*costmap.info.resolution+costmap.info.origin.position.x,
-					(point[1]+miny)*costmap.info.resolution+costmap.info.origin.position.y
+					(point[0]+minx_idx)*costmap.info.resolution+costmap.info.origin.position.x,
+					(point[1]+miny_idx)*costmap.info.resolution+costmap.info.origin.position.y
 					) for point in poly]
 			# print("11: ") # -------------------------------------
 			# self.get_logger().info('polygon index: ' + str(ordered_polygons.index(poly)) + '.')
@@ -806,104 +827,102 @@ class MapDrive(Node):
 
 
 	def navigate_to_pose(self, x, y, angle):
-		"""使用NavigateToPose动作发送目标点"""
-		# 等待动作服务器
-		while not self.navigate_to_pose_client.wait_for_server(timeout_sec=1.0):
-			self.get_logger().info('NavigateToPose action server not available, waiting...')
+		"""Sends a goal to the NavigateToPose action server and waits for the result."""
+		self.get_logger().info(f'Waiting for NavigateToPose action server...')
+		if not self.navigate_to_pose_client.wait_for_server(timeout_sec=5.0):
+			self.get_logger().error('NavigateToPose action server not available after waiting!')
+			return False
 
-		# 创建目标消息
+		# Create the goal message
 		goal_msg = NavigateToPose.Goal()
 		goal_msg.pose.header.frame_id = self.global_frame
 		goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
-		
-		# 设置位置
 		goal_msg.pose.pose.position.x = x
 		goal_msg.pose.pose.position.y = y
 		goal_msg.pose.pose.position.z = 0.0
 		
-		# 设置方向
 		angle_quat = self.euler_to_quaternion(angle, 0, 0)
 		goal_msg.pose.pose.orientation.x = angle_quat[0]
 		goal_msg.pose.pose.orientation.y = angle_quat[1]
 		goal_msg.pose.pose.orientation.z = angle_quat[2]
 		goal_msg.pose.pose.orientation.w = angle_quat[3]
 
-		# 发送目标
-		self.get_logger().info(f'Sending goal: x={x:.2f}, y={y:.2f}, angle={angle:.2f}')
+		self.get_logger().info(f'Sending goal to NavigateToPose server: x={x:.2f}, y={y:.2f}, angle={angle:.2f}')
+		send_goal_future = self.navigate_to_pose_client.send_goal_async(goal_msg)
 		
-		# 初始化反馈状态变量
-		self.navigation_finished = False
-		self.navigation_succeeded = False
-		self.last_feedback_time = time.time()
-		
-		# 使用异步方式发送目标，带反馈回调
-		self.navigate_to_pose_client.send_goal_async(
-			goal_msg,
-			feedback_callback=self.feedback_callback)
-		
-		# 等待导航完成，最多60秒
-		start = time.time()
-		while not self.navigation_finished and (time.time() - start) < 60.0:
-			rclpy.spin_once(self, timeout_sec=0.1)
-			# 如果超过5秒没有收到反馈，则认为导航完成
-			if time.time() - self.last_feedback_time > 5.0:
-				self.navigation_finished = True
-				self.navigation_succeeded = True
-				
-		if not self.navigation_finished:
-			self.get_logger().warn("Navigation timed out!")
+		try:
+			rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=10.0)
+			goal_handle = send_goal_future.result()
+		except Exception as e:
+			self.get_logger().error(f"Exception while sending goal: {e}")
 			return False
-			
-		return self.navigation_succeeded
+
+		if goal_handle is None:
+			self.get_logger().error('Timed out waiting for goal to be accepted by the server.')
+			return False
+
+		if not goal_handle.accepted:
+			self.get_logger().error('Goal rejected by server')
+			return False
+
+		self.get_logger().info('Goal accepted by server, waiting for result...')
+		result_future = goal_handle.get_result_async()
+
+		try:
+			rclpy.spin_until_future_complete(self, result_future, timeout_sec=60.0) # Wait up to 60 seconds for the result
+			result = result_future.result()
+		except Exception as e:
+			self.get_logger().error(f"Exception while waiting for result: {e}")
+			goal_handle.cancel_goal_async()
+			return False
+
+		if result is None:
+			self.get_logger().warn("Navigation timed out!")
+			goal_handle.cancel_goal_async() # Cancel the goal if we timed out
+			return False
+
+		status = result.status
+		if status == GoalStatus.STATUS_SUCCEEDED:
+			self.get_logger().info('Goal succeeded!')
+			return True
+		else:
+			self.get_logger().warn(f'Goal failed with status: {status}')
+			return False
 
 	def feedback_callback(self, feedback_msg):
 		"""
-		处理导航过程中的反馈信息
+		REMOVED - This callback is no longer used for determining goal completion.
+		The new navigate_to_pose function handles this by waiting for the action result.
 		"""
-		# 更新最后收到反馈的时间
-		self.last_feedback_time = time.time()
-		
-		# 处理反馈信息
-		feedback = feedback_msg.feedback
-		self.get_logger().debug(f'Distance remaining: {feedback.distance_remaining:.2f} meters')
-		
-		# 当距离非常小时，认为已经到达目标
-		# 可以根据实际需要调整这个阈值
-		if feedback.distance_remaining < 0.15:
-			self.navigation_finished = True
-			self.navigation_succeeded = True
+		pass
 
 
 
 
 
 
-	def add_more_waypoints(self, x1, y1, x2, y2, angle_quat, num_waypoints):	
-		# Calculate the increment values for x and y coordinates
-		increment_x = (x2 - x1) / (num_waypoints + 1)
-		increment_y = (y2 - y1) / (num_waypoints + 1)
-		for i in range(num_waypoints):
-			# Calculate the new waypoint coordinates
-			new_x = x1 + (i + 1) * increment_x
-			new_y = y1 + (i + 1) * increment_y
-			# self.get_logger().info("-------- including points: (%f, %f)" % (new_x, new_y))
-			# Append the mid waypoint to the data dictionary with the index as the key
-			index = len(self.pose_output) + 1
-			self.pose_output[index] = {
-									"position":
-									{
-										"x": float(new_x),
-										"y": float(new_y),
-										"z": 0.0
-									},
-									"orientation":
-									{
-										"w": angle_quat[3],
-										"x": angle_quat[0],
-										"y": angle_quat[1],
-										"z": angle_quat[2]
-									},
-								} 
+	def add_more_waypoints(self, x1, y1, x2, y2, angle_quat):
+		# Calculate the midpoint
+		new_x = (x1 + x2) / 2.0
+		new_y = (y1 + y2) / 2.0
+		self.get_logger().info("-------- including one mid-point: (%f, %f)" % (new_x, new_y))
+		# Append the mid waypoint to the data dictionary with the index as the key
+		index = len(self.pose_output) + 1
+		self.pose_output[index] = {
+								"position":
+								{
+									"x": float(new_x),
+									"y": float(new_y),
+									"z": 0.0
+								},
+								"orientation":
+								{
+									"w": angle_quat[3],
+									"x": angle_quat[0],
+									"y": angle_quat[1],
+									"z": angle_quat[2]
+								},
+							}
 
 
 	def write_pose(self, x, y, angle):
@@ -914,7 +933,7 @@ class MapDrive(Node):
 		angle_quat = self.euler_to_quaternion(angle,0,0)
 
 		if len(self.pose_output) >= 1:
-			last_index = len(self.pose_output) 
+			last_index = len(self.pose_output)
 			print("write_pose")
 			x1 = self.pose_output[last_index]["position"]["x"]
 			y1 = self.pose_output[last_index]["position"]["y"]
@@ -922,12 +941,9 @@ class MapDrive(Node):
 			# Calculate the distance between the two coordinates
 			distance = math.sqrt((x - x1)**2 + (y - y1)**2)
 			# Check if the distance is greater than the minimum length
-			if distance >= self.min_wp_dist:
-				# Calculate the number of waypoints to add
-				num_waypoints = int(distance / self.min_wp_dist) * self.num_points	
-				self.get_logger().info("--x-o-x-- including (%f) points." % (num_waypoints))
-				self.add_more_waypoints(x1, y1, x, y, angle_quat, num_waypoints)
-			
+			if distance > self.min_wp_dist * 2: # Add a point only if the segment is long enough
+				self.add_more_waypoints(x1, y1, x, y, angle_quat)
+
 		# Append the values to the data dictionary with the index as the key
 		index = len(self.pose_output) + 1
 		self.pose_output[index] = {
@@ -1007,11 +1023,20 @@ class MapDrive(Node):
 	def private_shutdown(self):
 		self.visualization_cleanup()
 		"""Cancel pending task request and kill sub_node."""
-		print('Canceling current sub_node task i.e. if any.')
-		if self.result_future:
-			future = self.goal_handle.cancel_goal_async()
-			rclpy.spin_until_future_complete(self.sub_node, future)
-		self.sub_node.destroy_node()
+		self.get_logger().info('Canceling current sub_node task i.e. if any.')
+		if self.result_future and self.goal_handle:
+			# Check if the sub_node is still valid before using it
+			if self.sub_node and rclpy.ok() and self.sub_node.handle:
+				try:
+					future = self.goal_handle.cancel_goal_async()
+					rclpy.spin_until_future_complete(self.sub_node, future, timeout_sec=1.0)
+				except Exception as e:
+					self.get_logger().warn(f"Exception during goal cancellation: {e}")
+		
+		if self.sub_node and rclpy.ok() and self.sub_node.handle:
+			self.sub_node.destroy_node()
+		
+		self.get_logger().info("Private shutdown sequence finished.")
 		return
 
 
