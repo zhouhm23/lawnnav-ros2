@@ -4,8 +4,8 @@
 # 进度：实现rviz规划多边形，实现细胞分解, 实现规划路径，实现发布导航点
 # 问题：路径覆盖的移动过程不够连贯，修正次数过多，覆盖率不够高
 # TODO
-# 检查目标点方法有待改进，只判断距离<0.15不能与navigation/config/nav2_controller_teb.yaml的xy_goal_tolerance配置一致
-# 不知道为什么goal_future=self.navigate_to_pose_client.send_goal_async始终是none
+# goal_handle有时候还是超时
+# rviz里规划要包含障碍物才能运动
 #export ROS_DOMAIN_ID=0
 import sys
 import os
@@ -91,13 +91,13 @@ class MapDrive(Node):
 		self.result_future = None
 		
 		self.declare_parameter("global_frame", "map")
-		self.declare_parameter("robot_width", 0.6) 
+		self.declare_parameter("robot_width", 0.1) 
 		self.declare_parameter("costmap_max_non_lethal", 70)
 		self.declare_parameter("boustrophedon_decomposition", True)
 		self.declare_parameter("border_drive", False)
 		self.declare_parameter("base_frame", "base_footprint")
-		self.declare_parameter("num_points", 2) 
-		self.declare_parameter("min_wp_dist", 4.5) 
+		self.declare_parameter("num_points", 1) 
+		self.declare_parameter("min_wp_dist", 0.2) 
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value

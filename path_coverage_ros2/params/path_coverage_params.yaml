@@ -3,23 +3,23 @@ path_coverage:
     # 全局坐标系，默认map（规划参考坐标系）
     global_frame: "map"
     
-    # 机器人宽度（单位：米），用于路径间距/避障计算
-    robot_width: 0.2
+    # 每条路径的宽度（实际为半径）
+    robot_width: 0.1
     
-    # 代价地图非致命阈值(0-255)，≤为可通行区域
+    # 认为可通过的最大代价值：如果一个单元格的代价值 ≤ 70，算法就认为这个地方是空地，可以规划路径穿过。
     costmap_max_non_lethal: 70
     
-    # 是否启用之字形区域分解（覆盖规划算法）
+    # 是否执行弓字形分解
     boustrophedon_decomposition: true
     
-    # 是否先沿覆盖区域边界行驶（覆盖规划辅助）
+    # 首先绕着单元格行驶
     border_drive: false
     
-    # 机器人基坐标系，默认base_footprint（坐标变换用）
+    # 机器人基座标系
     base_frame: "base_footprint"
     
-    # 路径段插值采样点数，影响路径平滑度（降低此值可减少圆弧区域的密集点）
+    # 在每个 min_wp_dist 中放置的航点数：要插入的航点数量 = (路径段总长度 / min_wp_dist) * num_points
     num_points: 1
     
-    # 最小航点间距（单位：米），过滤密集航点（增大此值可进一步过滤密集点）
+    # 在考虑拆分之前航点之间的最大距离：如果这个距离大于或等于 min_wp_dist 的值，系统就会认为这段路径太长了，需要在这中间插入更多的点来让路径变得更精细。
     min_wp_dist: 0.2
