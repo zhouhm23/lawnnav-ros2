@@ -13,7 +13,7 @@ def generate_launch_description():
           'frame_id':'base_footprint',
           'use_sim_time':use_sim_time,
           'subscribe_rgbd':True,
-          'subscribe_scan': True,
+          'subscribe_scan': False,
           'use_action_for_goal':True,
           'qos_scan':qos,
           'qos_image':qos,
@@ -22,7 +22,7 @@ def generate_launch_description():
           'queue_size': 50,
           'Reg/Strategy':'1',
           'Reg/Force3DoF':'true',
-          # 'RGBD/NeighborLinkRefining':'True',
+          'RGBD/NeighborLinkRefining':'true',
           'Grid/RangeMin':'0.2', # ignore laser scan points on the robot itself
           'Optimizer/GravitySigma':'0', # Disable imu constraints (we are already in 2D)
           # 'Vis/CorType': '0',
@@ -43,7 +43,8 @@ def generate_launch_description():
             ('rgb/camera_info', '/ascamera/camera_publisher/rgb0/camera_info'),
             ('depth/image', '/ascamera/camera_publisher/depth0/image_raw'),
             ('odom', '/odom'),
-            ('scan','/scan_raw'),
+            ('imu', '/imu/data'),
+            ('cloud_map', '/rtabmap/cloud_map'),
           ]
 
     return LaunchDescription([
@@ -63,12 +64,11 @@ def generate_launch_description():
             parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.008, 'use_sim_time':use_sim_time, 'qos':qos}],
             remappings=remappings),
 
-        # Localization mode:
+        # SLAM mode:
         Node(
             package='rtabmap_slam', executable='rtabmap', output='screen',
             parameters=[parameters,
-              {'Mem/IncrementalMemory':'False',
-               'Mem/InitWMWithAllNodes':'True'}],
+              {'Mem/IncrementalMemory':'True'}],
             remappings=remappings),
     ])
 

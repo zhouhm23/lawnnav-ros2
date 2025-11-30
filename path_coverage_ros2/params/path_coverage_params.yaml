@@ -4,7 +4,7 @@ path_coverage:
     global_frame: "map"
     
     # 机器人宽度（单位：米），用于路径间距/避障计算
-    robot_width: 0.3
+    robot_width: 0.2
     
     # 代价地图非致命阈值(0-255)，≤为可通行区域
     costmap_max_non_lethal: 70
@@ -16,7 +16,7 @@ path_coverage:
     border_drive: false
     
     # 机器人基坐标系，默认base_footprint（坐标变换用）
-    base_frame: "base_link"
+    base_frame: "base_footprint"
     
     # 路径段插值采样点数，影响路径平滑度（降低此值可减少圆弧区域的密集点）
     num_points: 1

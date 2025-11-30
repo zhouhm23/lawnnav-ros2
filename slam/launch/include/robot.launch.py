@@ -6,6 +6,8 @@ from launch.substitutions import LaunchConfiguration
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction
+from launch_ros.actions import Node
+import xacro
 
 def launch_setup(context):
     compiled = os.environ['need_compile']
@@ -48,9 +50,24 @@ def launch_setup(context):
     if compiled == 'True':
         peripherals_package_path = get_package_share_directory('peripherals')
         controller_package_path = get_package_share_directory('controller')
+        mentorpi_description_path = get_package_share_directory('mentorpi_description')
     else:
         peripherals_package_path = '/home/ubuntu/ros2_ws/src/peripherals'
         controller_package_path = '/home/ubuntu/ros2_ws/src/driver/controller'
+        mentorpi_description_path = '/home/ubuntu/ros2_ws/src/simulations/mentorpi_description'
+
+    xacro_file = os.path.join(mentorpi_description_path, 'urdf/mentorpi.xacro')
+    doc = xacro.parse(open(xacro_file))
+    xacro.process_doc(doc)
+    robot_description_config = doc.toxml()
+    robot_description = {'robot_description': robot_description_config}
+
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        output='screen',
+        parameters=[robot_description]
+    )
 
     controller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -97,30 +114,23 @@ def launch_setup(context):
         condition=IfCondition(use_joy)
     )
 
-    init_pose_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(controller_package_path, 'launch/init_pose.launch.py')),
-        launch_arguments={
-            'namespace': namespace,  
-            'use_namespace': use_namespace,
-            'action_name': action_name,
-        }.items(),
-    )
+    # init_pose_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(peripherals_package_path, 'launch/init_pose.launch.py')),
+    #     launch_arguments={
+    #         'action_name': action_name,
+    #     }.items(),
+    # )
 
-    return [sim_arg,
-            depth_camera_launch, 
-            master_name_arg,
-            robot_name_arg, 
-            depth_camera_name_arg,
-            use_joy_arg,
-            use_depth_camera_arg,
-            action_name_arg,
-            controller_launch,
-            
-            lidar_launch, 
-           
-            joystick_control_launch,
-            #init_pose_launch,
-            ]
+    return [
+        sim_arg, master_name_arg, robot_name_arg, depth_camera_name_arg, use_joy_arg, use_depth_camera_arg, action_name_arg,
+        controller_launch,
+        depth_camera_launch,
+        lidar_launch,
+        joystick_control_launch,
+        # init_pose_launch,
+        robot_state_publisher_node,
+    ]
 
 def generate_launch_description():
     return LaunchDescription([
