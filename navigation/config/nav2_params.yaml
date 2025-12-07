@@ -240,8 +240,8 @@ planner_server:
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.5
-      use_astar: false
+      tolerance: 0.1
+      use_astar: true
       allow_unknown: true
 
 planner_server_rclcpp_node:
