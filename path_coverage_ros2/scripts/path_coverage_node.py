@@ -61,8 +61,6 @@ class MapDrive(Node):
 	def __init__(self):
 		super().__init__('map_drive') 
 
-		# 移除原来的cmd_vel发布者，添加NavigateToPose动作客户端
-		self.navigate_to_pose_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
 		rate = 50
 		self.declare_parameter('hz', rate)
 		hz_param = self.get_parameter('hz').get_parameter_value().integer_value
@@ -70,6 +68,10 @@ class MapDrive(Node):
 
 		self.sub_node = rclpy.create_node('path_verifier_client')
 		self.sub_node.get_logger().info('Created path_verifier_client node')
+
+		# 移除原来的cmd_vel发布者，添加NavigateToPose动作客户端
+		# 使用 sub_node 以便在回调中 spin
+		self.navigate_to_pose_client = ActionClient(self.sub_node, NavigateToPose, 'navigate_to_pose')
 		self.compute_path_to_pose_client = ActionClient(self.sub_node, ComputePathToPose, 'compute_path_to_pose')
 		self.goal_msg = ComputePathToPose.Goal()
 		self.x = None
@@ -851,7 +853,7 @@ class MapDrive(Node):
 		send_goal_future = self.navigate_to_pose_client.send_goal_async(goal_msg)
 		
 		try:
-			rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=10.0)
+			rclpy.spin_until_future_complete(self.sub_node, send_goal_future, timeout_sec=10.0)
 			goal_handle = send_goal_future.result()
 		except Exception as e:
 			self.get_logger().error(f"Exception while sending goal: {e}")
@@ -869,7 +871,7 @@ class MapDrive(Node):
 		result_future = goal_handle.get_result_async()
 
 		try:
-			rclpy.spin_until_future_complete(self, result_future, timeout_sec=60.0) # Wait up to 60 seconds for the result
+			rclpy.spin_until_future_complete(self.sub_node, result_future, timeout_sec=60.0) # Wait up to 60 seconds for the result
 			result = result_future.result()
 		except Exception as e:
 			self.get_logger().error(f"Exception while waiting for result: {e}")
