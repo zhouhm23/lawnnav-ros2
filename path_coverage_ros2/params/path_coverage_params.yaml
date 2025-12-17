@@ -4,7 +4,7 @@ path_coverage:
     global_frame: "map"
     
     # 每条路径的宽度（实际为半径）
-    robot_width: 0.2
+    robot_width: 0.3
     
     # 认为可通过的最大代价值：如果一个单元格的代价值 ≤ 70，算法就认为这个地方是空地，可以规划路径穿过。
     costmap_max_non_lethal: 70

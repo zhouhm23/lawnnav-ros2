@@ -3,6 +3,8 @@ from launch import LaunchDescription
 from launch import LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+import os
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
 
@@ -23,7 +25,16 @@ def generate_launch_description():
           'Reg/Strategy':'1',
           'Reg/Force3DoF':'true',
           'RGBD/NeighborLinkRefining':'true',
-          'Grid/RangeMin':'0.2', # ignore laser scan points on the robot itself
+          # Lower RangeMin so near points are not discarded (useful for close-to-robot ground)
+          'Grid/RangeMin':'0.02',
+          # Ensure a sensible max range for projection and grid
+          'Grid/RangeMax':'5.0',
+          'Grid/CellSize':'0.05',
+          # Parameters that influence ground projection (may be ignored if node doesn't declare them)
+          'proj_max_ground_height':'0.20',
+          'proj_max_ground_angle':'45',
+          'RGBD/ProximityBySpace':'true',
+          'RGBD/ProximityPathMaxNeighbors':'10',
           'Optimizer/GravitySigma':'0', # Disable imu constraints (we are already in 2D)
           # 'Vis/CorType': '0',
           # 'OdomF2M/MaxSize': '4000',
@@ -47,6 +58,10 @@ def generate_launch_description():
             ('cloud_map', '/rtabmap/cloud_map'),
           ]
 
+    # path to optional params file in navigation package
+    nav_share = get_package_share_directory('navigation')
+    rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params.yaml')
+
     return LaunchDescription([
 
         # Launch arguments
@@ -65,11 +80,10 @@ def generate_launch_description():
             remappings=remappings),
 
         # SLAM mode:
-        Node(
-            package='rtabmap_slam', executable='rtabmap', output='screen',
-            parameters=[parameters,
-              {'Mem/IncrementalMemory':'True'}],
-            remappings=remappings),
+                Node(
+                        package='rtabmap_slam', executable='rtabmap', output='screen',
+                        parameters=[parameters, rtabmap_params_file, {'Mem/IncrementalMemory':'True'}],
+                        remappings=remappings),
     ])
 
 if __name__ == '__main__':

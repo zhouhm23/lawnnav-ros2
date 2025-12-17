@@ -1,0 +1,25 @@
+rtabmap:
+  ros__parameters:
+    # RTAB-Map parameters (strings are safer for packaged binary)
+    'Grid/RangeMin': '0.02'
+    'Grid/RangeMax': '5.0'
+    'Grid/CellSize': '0.05'
+    # Ground projection / detection
+    # Allow detecting ground at lower heights (e.g. floor below a table)
+    'Grid/MinGroundHeight': '0.0'
+    'Grid/MaxGroundHeight': '0.5'
+    'Grid/MaxGroundAngle': '45'
+    'Grid/MapFrameProjection': 'false'
+    'Grid/NormalsSegmentation': 'false'
+    'Grid/3D': 'true'
+    'Grid/GroundIsObstacle': 'true'
+    'proj_max_ground_height': '0.20'
+    'proj_max_ground_angle': '20'
+    'RGBD/ProximityBySpace': 'true'
+    'RGBD/ProximityPathMaxNeighbors': '10'
+    'RGBD/CreateOccupancyGrid': 'true'
+    'queue_size': 50
+    'subscribe_rgbd': true
+    'subscribe_scan': false
+    'Reg/Strategy': '1'
+    'Reg/Force3DoF': 'true'

@@ -4,7 +4,6 @@
 # 进度：实现rviz规划多边形，实现细胞分解, 实现规划路径，实现发布导航点
 # 问题：路径覆盖的移动过程不够连贯，修正次数过多，覆盖率不够高
 # TODO
-# goal_handle有时候还是超时
 # rviz里规划要包含障碍物才能运动
 #export ROS_DOMAIN_ID=0
 import sys
@@ -69,7 +68,6 @@ class MapDrive(Node):
 		self.sub_node = rclpy.create_node('path_verifier_client')
 		self.sub_node.get_logger().info('Created path_verifier_client node')
 
-		# 移除原来的cmd_vel发布者，添加NavigateToPose动作客户端
 		# 使用 sub_node 以便在回调中 spin
 		self.navigate_to_pose_client = ActionClient(self.sub_node, NavigateToPose, 'navigate_to_pose')
 		self.compute_path_to_pose_client = ActionClient(self.sub_node, ComputePathToPose, 'compute_path_to_pose')
@@ -79,10 +77,10 @@ class MapDrive(Node):
 		
 		self.rospack  = get_package_share_directory('path_coverage') 
 
-		# Define the file name for the YAML file
+		# 位置输出文件
 		self.filename = "/home/ubuntu/ros2_ws/src/path_coverage_ros2/params/pose_output.yaml" # "pose_output.yaml"
 
-		# Initialize 
+		# 初始化
 		self.pose_output = {}
 		self.last_points = {}
 		self.last_path = None
@@ -93,7 +91,7 @@ class MapDrive(Node):
 		self.result_future = None
 		
 		self.declare_parameter("global_frame", "map")
-		self.declare_parameter("robot_width", 0.1) 
+		self.declare_parameter("robot_width", 0.2) 
 		self.declare_parameter("costmap_max_non_lethal", 70)
 		self.declare_parameter("boustrophedon_decomposition", True)
 		self.declare_parameter("border_drive", False)
@@ -788,7 +786,7 @@ class MapDrive(Node):
 		self.get_logger().info("o_o -==----: ")
 		self.get_logger().info("o_o 4: "+ str(path)) # -------------------------------------
 
-		# 使用NavigateToPose动作客户端替代原来的直接速度控制
+		# 使用NavigateToPose动作客户端
 		for pos_last,pos_next in pairwise(path):
 			
 			if not rclpy.ok:
@@ -890,14 +888,6 @@ class MapDrive(Node):
 		else:
 			self.get_logger().warn(f'Goal failed with status: {status}')
 			return False
-
-	def feedback_callback(self, feedback_msg):
-		"""
-		REMOVED - This callback is no longer used for determining goal completion.
-		The new navigate_to_pose function handles this by waiting for the action result.
-		"""
-		pass
-
 
 
 

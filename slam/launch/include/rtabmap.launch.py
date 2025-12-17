@@ -3,6 +3,8 @@ from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
 from launch import LaunchService
 from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+import os
+from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
 
@@ -21,7 +23,15 @@ def generate_launch_description():
         'queue_size': 50,  
         'Reg/Strategy': '1',
         'Reg/Force3DoF': 'true',
-        'Grid/RangeMin': '0.2',  
+        # Reduce RangeMin so near points are not discarded
+        'Grid/RangeMin': '0.02',
+        'Grid/RangeMax': '5.0',
+        'Grid/CellSize': '0.05',
+        # Projection/ground related parameters
+        'proj_max_ground_height': '0.20',
+        'proj_max_ground_angle': '20',
+        'RGBD/ProximityBySpace': 'true',
+        'RGBD/ProximityPathMaxNeighbors': '10',
         'Optimizer/GravitySigma': '0',  # Disable imu constraints (we are already in 2D)
         'Grid/Sensor': 'true',
         #'approx_sync_max_interval': 0.02,  
@@ -37,6 +47,10 @@ def generate_launch_description():
         ('odom', '/odom'),
         ('scan','/scan_raw'),
     ]
+
+    # load params YAML from slam package config if available
+    slam_share = get_package_share_directory('slam')
+    rtabmap_params_file = os.path.join(slam_share, 'config', 'rtabmap_params.yaml')
 
     return LaunchDescription([
 
@@ -58,7 +72,7 @@ def generate_launch_description():
         # SLAM Mode:
         Node(
             package='rtabmap_slam', executable='rtabmap', output='screen',
-            parameters=[parameters],
+            parameters=[parameters, rtabmap_params_file],
             remappings=remappings,
             arguments=['-d']),
     ])
