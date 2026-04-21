@@ -13,6 +13,7 @@ import pdb
 import json
 import tempfile
 from shapely.geometry import Polygon, Point # pip3 install shapely
+from shapely.ops import unary_union
 from math import *
 import time
 import subprocess # sudo apt-get install ruby-full
@@ -50,6 +51,8 @@ from action_msgs.msg import GoalStatus
 
 
 
+# Keep for backward compatibility; execution-stage cost filtering now uses
+# `costmap_max_non_lethal` directly to match decomposition-stage logic.
 INSCRIBED_INFLATED_OBSTACLE = 253
 
 
@@ -77,8 +80,9 @@ class MapDrive(Node):
 		
 		self.rospack  = get_package_share_directory('path_coverage') 
 
-		# 位置输出文件
-		self.filename = "/home/ubuntu/ros2_ws/src/path_coverage_ros2/params/pose_output.yaml" # "pose_output.yaml"
+		# 位置输出文件（主路径 + 回退路径）
+		self.filename = "/home/ubuntu/ros2_ws/src/path_coverage_ros2/params/pose_output.yaml"
+		self.fallback_filename = "/tmp/pose_output.yaml"
 
 		# 初始化
 		self.pose_output = {}
@@ -91,13 +95,30 @@ class MapDrive(Node):
 		self.result_future = None
 		
 		self.declare_parameter("global_frame", "map")
-		self.declare_parameter("robot_width", 0.2) 
+		self.declare_parameter("robot_width", 0.171) 
 		self.declare_parameter("costmap_max_non_lethal", 70)
 		self.declare_parameter("boustrophedon_decomposition", True)
 		self.declare_parameter("border_drive", False)
 		self.declare_parameter("base_frame", "base_footprint")
 		self.declare_parameter("num_points", 1) 
 		self.declare_parameter("min_wp_dist", 0.2) 
+		# 规划区域按用户多边形掩膜裁剪后，可额外向外扩张的距离（米）
+		# 用于补偿栅格化边缘损失；设为 0 则严格按用户画的区域。
+		self.declare_parameter("polygon_expand", 0.05)
+		# 覆盖路径相对边界的内缩距离（米）：0 表示尽量贴边。
+		self.declare_parameter("coverage_clearance", 0.0)
+		# 外扩圈（polygon_expand）内允许的最大代价值。
+		# 默认 0：仅允许白色自由区，避免扩张进入灰色膨胀层。
+		self.declare_parameter("expand_max_non_lethal", 0)
+		# 执行阶段（局部代价地图）允许的最大代价值。
+		# 默认 0：导航目标尽量不落在灰色膨胀层。
+		self.declare_parameter("drive_max_non_lethal", 0)
+		# Visualization control
+		self.declare_parameter("show_all_cells", False)
+		self.declare_parameter("show_paths", True)
+		# Static map masking (optional)
+		self.declare_parameter("use_static_map_mask", False)
+		self.declare_parameter("static_map_occupied_thresh", 65)
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value
@@ -107,11 +128,21 @@ class MapDrive(Node):
 		self.base_frame = self.get_parameter("base_frame").get_parameter_value().string_value
 		self.num_points = self.get_parameter("num_points").get_parameter_value().integer_value
 		self.min_wp_dist = self.get_parameter("min_wp_dist").get_parameter_value().double_value
+		self.polygon_expand = self.get_parameter("polygon_expand").get_parameter_value().double_value
+		self.coverage_clearance = self.get_parameter("coverage_clearance").get_parameter_value().double_value
+		self.expand_max_non_lethal = self.get_parameter("expand_max_non_lethal").get_parameter_value().integer_value
+		self.drive_max_non_lethal = self.get_parameter("drive_max_non_lethal").get_parameter_value().integer_value
+		self.show_all_cells = self.get_parameter("show_all_cells").get_parameter_value().bool_value
+		self.show_paths = self.get_parameter("show_paths").get_parameter_value().bool_value
+		self.use_static_map_mask = self.get_parameter("use_static_map_mask").get_parameter_value().bool_value
+		self.static_map_occupied_thresh = self.get_parameter("static_map_occupied_thresh").get_parameter_value().integer_value
+		self.static_map = None
 
 		self.create_subscription(PointStamped, "/clicked_point", self.rvizPointReceived, 1)
 		# self.global_map_sub = self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self.map_callback, QoSProfile(depth=300, reliability=ReliabilityPolicy.BEST_EFFORT))
 		self.create_subscription(OccupancyGrid, f"/global_costmap/costmap", self.globalCostmapReceived, 10) 
 		self.create_subscription(OccupancyGrid, f"/local_costmap/costmap", self.localCostmapReceived, 10)  
+		self.create_subscription(OccupancyGrid, "/map", self.staticMapReceived, 1)
 
 		self.pub_marker = self.create_publisher(Marker, 'path_coverage_marker', 16) 
 		
@@ -119,7 +150,7 @@ class MapDrive(Node):
 		self.tf_listener = TransformListener(self.tfBuffer, self)
 
 		self.get_logger().info('parameters::::global_frame::robot_width::costmap_max_non_lethal::boustrophedon_decomposition::border_drive::base_frame::num_points::min_wp_dist.')
-		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'.')
+		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'::polygon_expand='+str(self.polygon_expand)+'::coverage_clearance='+str(self.coverage_clearance)+'::expand_max_non_lethal='+str(self.expand_max_non_lethal)+'::drive_max_non_lethal='+str(self.drive_max_non_lethal)+'::show_all_cells='+str(self.show_all_cells)+'::show_paths='+str(self.show_paths)+'::use_static_map_mask='+str(self.use_static_map_mask)+'::static_map_occupied_thresh='+str(self.static_map_occupied_thresh)+'.')
 		self.get_logger().info("Path coverage node initialized successfully...")
 	
 
@@ -141,6 +172,9 @@ class MapDrive(Node):
 		# self.get_logger().info('global costmap received')
 		self.global_costmap = costmap
 
+	def staticMapReceived(self, grid):
+		self.static_map = grid
+
 
 		
 
@@ -161,6 +195,18 @@ class MapDrive(Node):
 
 	def visualize_cell(self, points, show=True, close=True):
 		self.visualize_trapezoid(points, show, close)
+
+	def visualize_cells_all(self, polys, id_offset=1000):
+		"""Publish all cell boundaries at once (no paths)."""
+		self.last_points = {}
+		for i, poly in enumerate(polys):
+			try:
+				points = list(poly.exterior.coords)
+			except Exception:
+				continue
+			cell_id = id_offset + i
+			self.last_points[cell_id] = points
+			self.visualize_trapezoid(points, show=True, close=True, id=cell_id)
 
 
 
@@ -309,10 +355,8 @@ class MapDrive(Node):
 				# this signifies the end afterwhich everything is cleaned.
 				self.get_logger().info("writing the data to the YAML file...")
 				# empty the pose_output dict
-				# Write the data to the YAML file
-				self.pose_output["updatetime"] = time.time_ns()
-				with open(self.filename, "w") as f:
-					yaml.dump(self.pose_output, f)
+				# Write the data to yaml with fallback for readonly workspace cases
+				self._write_pose_output_yaml()
 				self.pose_output = {}	
 				# 路径覆盖完成，结束线程
 				self.get_logger().info("this signifies the end afterwhich everything is cleaned")
@@ -352,99 +396,97 @@ class MapDrive(Node):
 		return self.are_polygons_connected(poly1, poly2, threshold=4)
 
 
-	def find_connected_polygons(self, Polygons, polygon_area_threshold=1):
+	def find_connected_polygons(self, Polygons, polygon_area_threshold=0.0):
+		# Keep all decomposed cells. The previous graph-ordering logic could drop
+		# disconnected cells, which caused "only the first area gets covered".
+		if not Polygons:
+			return []
 
-		print("find_connected_polygons")
-		if len(Polygons) <= 2:
-			print("find_connected_polygons")
-			return Polygons
+		filtered_polygons = []
+		for polygon in Polygons:
+			try:
+				shp = Polygon([(x, y) for x, y in polygon])
+			except Exception:
+				continue
+			if shp.is_empty:
+				continue
+			if shp.area > polygon_area_threshold:
+				filtered_polygons.append(polygon)
 
-		print("find_connected_polygons")
-		polygons, polygon_area = self.make_Polygons_shapely_polygons(Polygons)
+		self.get_logger().info(f"Boustrophedon cells kept: {len(filtered_polygons)}/{len(Polygons)}")
+		return filtered_polygons
 
-		connected_polygons = []
-		associated_polygons = set()
+	def _as_polygons(self, geom, min_area=0.0):
+		"""Return all usable Polygon parts from arbitrary shapely geometry."""
+		if geom is None:
+			return []
+		try:
+			# Try to repair invalid geometry first.
+			geom_fixed = geom.buffer(0)
+		except Exception:
+			geom_fixed = geom
 
-		print("find_connected_polygons")
+		polys = []
+		if getattr(geom_fixed, "geom_type", "") == "Polygon":
+			if not geom_fixed.is_empty and geom_fixed.area > min_area:
+				polys.append(geom_fixed)
+			return polys
 
-		for i, poly1 in enumerate(polygons):
+		if hasattr(geom_fixed, "geoms"):
+			for g in geom_fixed.geoms:
+				if getattr(g, "geom_type", "") == "Polygon" and (not g.is_empty) and g.area > min_area:
+					polys.append(g)
 
-			index1 = polygons.index(poly1)
+		return polys
 
-			for j, poly2 in enumerate(polygons[i+1:], start=i+1):
-				if self.are_polygons_connected(poly1, poly2):
-					index2 = polygons.index(poly2)
-					connected_polygons.append((index1, index2))
-					associated_polygons.add(poly1)
-					associated_polygons.add(poly2)
+	def _as_single_polygon(self, geom, min_area=0.0):
+		"""Return one usable Polygon (largest area) from arbitrary geometry."""
+		polys = self._as_polygons(geom, min_area=min_area)
+		if not polys:
+			return None
+		return max(polys, key=lambda p: p.area)
 
-			if poly1 not in associated_polygons:
-				for poly2 in polygons:
-				#for j, poly2 in enumerate(polygons[i+1:], start=i+1):
-					if poly2 != poly1:
-						if self.are_polygons_connected_with_increased_thresh(poly1, poly2):
-							index2 = polygons.index(poly2)
-							connected_polygons.append((index1, index2))
-							associated_polygons.add(poly1)
-							associated_polygons.add(poly2)
-							break
+	def _normalize_polygon(self, geom, min_area=0.0, context=""):
+		"""Normalize arbitrary geometry into a single Polygon or None."""
+		if geom is None:
+			return None
+		poly = self._as_single_polygon(geom, min_area=min_area)
+		if poly is None:
+			self.get_logger().warn(f"{context} geometry is not a polygon, skip.")
+			return None
+		if poly.is_empty:
+			self.get_logger().warn(f"{context} geometry is empty, skip.")
+			return None
+		return poly
 
-			if poly1 not in associated_polygons:    
-				connected_polygons.append((index1,))
-				associated_polygons.add(poly1)
+	def _write_pose_output_yaml(self):
+		"""Write pose output yaml with fallback when preferred path is not writable."""
+		payload = dict(self.pose_output)
+		payload["updatetime"] = time.time_ns()
 
-		if connected_polygons:
+		targets = [self.filename]
+		if self.fallback_filename not in targets:
+			targets.append(self.fallback_filename)
 
-			order = []
-			parent_children = {}
+		last_err = None
+		for target in targets:
+			try:
+				target_dir = os.path.dirname(target)
+				if target_dir:
+					os.makedirs(target_dir, exist_ok=True)
+				with open(target, "w") as f:
+					yaml.dump(payload, f)
+				if target != self.filename:
+					self.get_logger().warn(
+						f"Primary pose output path not writable, wrote fallback: {target}"
+					)
+				return target
+			except OSError as e:
+				last_err = e
+				self.get_logger().warn(f"Failed writing pose output to {target}: {e}")
 
-			for pair in connected_polygons:
-				print(pair)
-
-				if isinstance(pair, tuple) and len(pair) == 2:
-					parent, child = pair
-					parent_children.setdefault(parent, []).append(child)
-
-			for parent in range(len(connected_polygons)):
-				if parent not in parent_children:
-					continue
-				order.append(parent)
-				stack = parent_children[parent][::-1]
-				while stack:
-					node = stack.pop()
-					if node not in parent_children:
-						order.append(node)
-						continue
-					order.extend([node]+parent_children[node][::-1])			
-
-			new_order = []
-			for elem in order:
-				if elem not in new_order:
-					new_order.append(elem)
-			
-			print("new_order: ", new_order)
-			# self.get_logger().info('new_order: ' + str(new_order) + '.')
-
-			ordered_polygons = [Polygons[i] for i in new_order]
-			ordered_polygon_areas = [polygon_area[i] for i in new_order]
-
-			filtered_polygons = []; 
-
-			for polygon, area in zip(ordered_polygons, ordered_polygon_areas):
-				if area >= polygon_area_threshold:
-					filtered_polygons.append(polygon)
-
-			# parent_children = None; del parent_children
-			# order = None; del order
-			# new_order = None; del new_order
-			# ordered_polygons = None; del ordered_polygons
-			# ordered_polygon_areas = None; del ordered_polygon_areas
-
-			# print("ordered_polygons: ", ordered_polygons)
-			print("filtered_polygons")
-			return filtered_polygons
-		else:
-			print("No polygons are connected.")
+		if last_err is not None:
+			raise last_err
 
 
 
@@ -465,9 +507,27 @@ class MapDrive(Node):
 		if costmap is None:
 			self.get_logger().error("Boustrophedon decomposition failed: costmap is None.")
 			return
+
+		# 修复可能的自交多边形，避免掩膜判断异常。
+		try:
+			poly_core = poly.buffer(0)
+			if hasattr(poly_core, "geoms") and poly_core.geom_type == "MultiPolygon":
+				poly_core = max(poly_core.geoms, key=lambda g: g.area)
+		except Exception:
+			poly_core = poly
+
+		poly_mask = poly_core
+
+		# 允许在无障碍条件下按参数轻微外扩，避免边缘漏割。
+		if self.polygon_expand > 0.0:
+			try:
+				poly_mask = poly_mask.buffer(self.polygon_expand, join_style=2)
+			except Exception:
+				pass
+
 		# Cut polygon area from costmap
 		self.get_logger().info("do_boustrophedon() 1: ") # -------------------------------------
-		(minx, miny, maxx, maxy) = poly.bounds
+		(minx, miny, maxx, maxy) = poly_mask.bounds
 		self.get_logger().info("do_boustrophedon() 2: ") # -------------------------------------
 		#self.get_logger().info("Converting costmap at x=%.2f..%.2f, y=%.2f..%.2f for Boustrophedon Decomposition" % (minx, maxx, miny, maxy))
 		#self.get_logger().info("3: ")
@@ -489,24 +549,110 @@ class MapDrive(Node):
 		self.get_logger().info("do_boustrophedon() 5: ") # -------------------------------------
 		# Transform costmap values to values expected by boustrophedon_decomposition script
 		rows = []
-		# iterate inclusive indices
+		# Two-stage mask construction:
+		# 1) build core/expand candidates by cost threshold
+		# 2) keep only cells connected to the core area (audit for expansion leakage)
+		cell_meta = []
 		for ix in range(minx_idx, maxx_idx + 1):
-			# self.get_logger().info("6: ") # -------------------------------------
-			column = []
+			column_meta = []
 			for iy in range(miny_idx, maxy_idx + 1):
-				x = ix*costmap.info.resolution+costmap.info.origin.position.x
-				y = iy*costmap.info.resolution+costmap.info.origin.position.y
-				data = costmap.data[int(iy*costmap.info.width+ix)]
-				if data == -1 or not poly.contains(Point([x,y])):
-					# Unknown or not inside polygon: Treat as obstacle
-					column.append(0)
-				elif data <= self.costmap_max_non_lethal:
-					# Freespace (non-lethal)
+				x = (ix + 0.5) * costmap.info.resolution + costmap.info.origin.position.x
+				y = (iy + 0.5) * costmap.info.resolution + costmap.info.origin.position.y
+				pt = Point([x, y])
+
+				if not poly_mask.covers(pt):
+					column_meta.append((False, False, False))
+					continue
+
+				# Optional static map mask to keep obstacles consistent with /map
+				if self.use_static_map_mask and self.static_map is not None:
+					mx = int((x - self.static_map.info.origin.position.x) / self.static_map.info.resolution)
+					my = int((y - self.static_map.info.origin.position.y) / self.static_map.info.resolution)
+					if 0 <= mx < self.static_map.info.width and 0 <= my < self.static_map.info.height:
+						mval = self.static_map.data[int(my * self.static_map.info.width + mx)]
+						if mval < 0 or mval >= self.static_map_occupied_thresh:
+							column_meta.append((True, False, False))
+							continue
+
+				data = costmap.data[int(iy * costmap.info.width + ix)]
+				if data == -1:
+					# Unknown 区域不作为可通行，避免外扩到未知区域
+					column_meta.append((True, False, False))
+					continue
+
+				in_core = poly_core.covers(pt)
+				core_ok = in_core and (data <= self.costmap_max_non_lethal)
+				expand_ok = (not in_core) and (data <= self.expand_max_non_lethal)
+				column_meta.append((True, core_ok, expand_ok))
+			cell_meta.append(column_meta)
+
+		from collections import deque
+		w = len(cell_meta)
+		h = len(cell_meta[0]) if w > 0 else 0
+		visited = [[False for _ in range(h)] for _ in range(w)]
+		q = deque()
+
+		seed_count = 0
+		for x in range(w):
+			for y in range(h):
+				_, core_ok, _ = cell_meta[x][y]
+				if core_ok:
+					visited[x][y] = True
+					q.append((x, y))
+					seed_count += 1
+
+		if seed_count == 0:
+			self.get_logger().warn("No traversable core cells found inside polygon; skip decomposition")
+			return
+
+		# 8-neighborhood preserves connectivity across diagonals in rasterized boundaries.
+		dirs = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+		while q:
+			x, y = q.popleft()
+			for dx, dy in dirs:
+				nx, ny = x + dx, y + dy
+				if nx < 0 or ny < 0 or nx >= w or ny >= h:
+					continue
+				if visited[nx][ny]:
+					continue
+				in_mask, core_ok, expand_ok = cell_meta[nx][ny]
+				if (not in_mask) or (not (core_ok or expand_ok)):
+					continue
+				visited[nx][ny] = True
+				q.append((nx, ny))
+
+		kept = 0
+		for x in range(w):
+			column = []
+			for y in range(h):
+				if visited[x][y]:
 					column.append(-1)
+					kept += 1
 				else:
-					# Obstacle
 					column.append(0)
 			rows.append(column)
+
+		# Build a geometry mask of blocked cells (inside polygon mask but not traversable)
+		# and clip decomposed cell polygons against it to avoid any black/inflation intrusion.
+		blocked_cell_polys = []
+		for x in range(w):
+			for y in range(h):
+				in_mask, core_ok, expand_ok = cell_meta[x][y]
+				if not in_mask:
+					continue
+				if visited[x][y] or core_ok or expand_ok:
+					continue
+				ix = minx_idx + x
+				iy = miny_idx + y
+				x0 = ix * costmap.info.resolution + costmap.info.origin.position.x
+				y0 = iy * costmap.info.resolution + costmap.info.origin.position.y
+				x1 = (ix + 1) * costmap.info.resolution + costmap.info.origin.position.x
+				y1 = (iy + 1) * costmap.info.resolution + costmap.info.origin.position.y
+				blocked_cell_polys.append(Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]))
+
+		blocked_union = unary_union(blocked_cell_polys) if blocked_cell_polys else None
+
+		self.get_logger().info(f"Expansion audit kept traversable cells: {kept}, seeds={seed_count}")
 
 
 		#print("7: ") # -------------------------------------
@@ -536,19 +682,68 @@ class MapDrive(Node):
 
 		ordered_polygons = self.find_connected_polygons(polygons)
 
-		print("ordered_polygons: ", ordered_polygons)
-
-		for poly in ordered_polygons:
-			print("poly")
+		# 预先转换细胞到地图坐标并计算质心。
+		cells = []
+		cell_polys = []
+		for cell in ordered_polygons:
 			points = [
-					(
-					(point[0]+minx_idx)*costmap.info.resolution+costmap.info.origin.position.x,
-					(point[1]+miny_idx)*costmap.info.resolution+costmap.info.origin.position.y
-					) for point in poly]
-			# print("11: ") # -------------------------------------
-			# self.get_logger().info('polygon index: ' + str(ordered_polygons.index(poly)) + '.')
-			print("points: ", Polygon(points))
-			self.drive_polygon(Polygon(points))
+				(
+					(point[0] + minx_idx) * costmap.info.resolution + costmap.info.origin.position.x,
+					(point[1] + miny_idx) * costmap.info.resolution + costmap.info.origin.position.y,
+				)
+				for point in cell
+			]
+			try:
+				poly_cell = Polygon(points)
+			except Exception:
+				continue
+			if blocked_union is not None and not poly_cell.is_empty:
+				try:
+					poly_cell = poly_cell.difference(blocked_union)
+				except Exception:
+					pass
+			for poly_part in self._as_polygons(poly_cell, min_area=0.0):
+				c = poly_part.centroid
+				cells.append({"poly": poly_part, "centroid": (c.x, c.y)})
+				cell_polys.append(poly_part)
+
+		if self.show_all_cells:
+			self.visualize_cells_all(cell_polys)
+
+		def _get_ref_pose_xy():
+			if self.x is not None and self.y is not None:
+				return (self.x, self.y)
+			try:
+				cur_tf = self.tfBuffer.lookup_transform(self.global_frame, self.base_frame, rclpy.time.Time())
+				return (cur_tf.transform.translation.x, cur_tf.transform.translation.y)
+			except (TransformException, LookupException, ConnectivityException, ExtrapolationException):
+				return None
+
+		# 最近邻迭代排序：每覆盖完一个细胞后重新选择下一个最近细胞。
+		remaining = list(cells)
+		total_cells = len(remaining)
+		exec_idx = 1
+		while remaining:
+			ref = _get_ref_pose_xy()
+			if ref is None:
+				# 无法获取当前位姿时，退化为输入顺序
+				next_i = 0
+			else:
+				rx, ry = ref
+				next_i = min(
+					range(len(remaining)),
+					key=lambda i: (remaining[i]["centroid"][0] - rx) ** 2 + (remaining[i]["centroid"][1] - ry) ** 2,
+				)
+
+			next_cell = remaining.pop(next_i)
+			self.get_logger().info(
+				f"Execute cell {exec_idx}/{total_cells}, centroid=({next_cell['centroid'][0]:.2f}, {next_cell['centroid'][1]:.2f})"
+			)
+			try:
+				self.drive_polygon(next_cell["poly"])
+			except Exception as e:
+				self.get_logger().error(f"Cell {exec_idx} failed, skipping. error={e}")
+			exec_idx += 1
 		#self.get_logger().info("12: ") # -------------------------------------
 		self.get_logger().info("Boustrophedon Decomposition completed...")
 
@@ -709,7 +904,9 @@ class MapDrive(Node):
 				return pos_next
 			cost = self.local_costmap.data[cellidx]
 		#	self.get_logger().info('plan...7')
-			if (cost >= INSCRIBED_INFLATED_OBSTACLE):
+			# 执行阶段使用更严格阈值（默认只走白色自由区），
+			# 防止目标点或轨迹压入灰色膨胀层。
+			if cost < 0 or cost > self.drive_max_non_lethal:
 		#		self.get_logger().info('plan...8')
 				break
 		#	self.get_logger().info('plan...9')
@@ -768,7 +965,11 @@ class MapDrive(Node):
 
 	def drive_path(self, path):
 		self.get_logger().info("o_o 1: ") # -------------------------------------
-		self.visualize_path(path)
+		if len(path) < 2:
+			self.get_logger().warn("drive_path got empty/short path, skip.")
+			return
+		if self.show_paths:
+			self.visualize_path(path)
 
 		self.get_logger().info("o_o 2: ") # -------------------------------------
 
@@ -818,7 +1019,8 @@ class MapDrive(Node):
 			self.navigate_to_pose(pos_next[0], pos_next[1], angle)
 
 		self.get_logger().info("o_o 11: ")
-		self.visualize_path(path, False)
+		if self.show_paths:
+			self.visualize_path(path, False)
 		self.get_logger().info("drive path completed...") # -------------------------------------
 
 
@@ -965,8 +1167,20 @@ class MapDrive(Node):
 
 
 	def drive_polygon(self, polygon):
+		polygon = self._normalize_polygon(polygon, context="drive_polygon input")
+		if polygon is None:
+			return
+		try:
+			# Repair potential self-intersections and collapse multiparts to a single polygon.
+			repaired = polygon.buffer(0)
+		except Exception:
+			repaired = polygon
+		polygon = self._normalize_polygon(repaired, context="drive_polygon repair")
+		if polygon is None:
+			return
 		self.get_logger().info("drive_polygon 1: ") # -------------------------------------
-		self.visualize_cell(polygon.exterior.coords[:])
+		if not self.show_all_cells:
+			self.visualize_cell(polygon.exterior.coords[:])
 		#self.get_logger().info("x_x 2: ") # -------------------------------------
 
 		# Align longest side of the polygon to the horizontal axis
@@ -983,27 +1197,49 @@ class MapDrive(Node):
 
 		self.get_logger().debug("Rotated polygon by %.0f: %s" % (angle*180/pi, str(poly_rotated.exterior.coords[:])))
 
+		executed = False
 		if self.border_drive:
 		#	self.get_logger().info("x_x 6: ") # -------------------------------------
-			path_rotated = border_calc_path(poly_rotated, self.robot_width)
+			path_rotated = border_calc_path(poly_rotated, self.robot_width, clearance=self.coverage_clearance)
 		#	self.get_logger().info("x_x 7: ") # -------------------------------------
-			path = rotate_points(path_rotated, -angle)
-		#	self.get_logger().info("x_x 8: ") # -------------------------------------
-			self.drive_path(path)
+			if path_rotated:
+				path = rotate_points(path_rotated, -angle)
+		#		self.get_logger().info("x_x 8: ") # -------------------------------------
+				self.drive_path(path)
+				executed = True
+			else:
+				self.get_logger().warn("border_drive produced empty path, skipping border pass")
 		#	self.get_logger().info("x_x 9: ") # -------------------------------------
 
 
 		# run
 		self.get_logger().info("x_x 10: ") # -------------------------------------
-		path_rotated = trapezoid_calc_path(poly_rotated, self.robot_width)
-		# self.get_logger().info("x_x 11: ") # -------------------------------------
-		path = rotate_points(path_rotated, -angle)
-		# self.get_logger().info("x_x 12: ") # -------------------------------------
-		self.drive_path(path)
+		path_rotated = trapezoid_calc_path(poly_rotated, self.robot_width, clearance=self.coverage_clearance)
+		if path_rotated:
+			# self.get_logger().info("x_x 11: ") # -------------------------------------
+			path = rotate_points(path_rotated, -angle)
+			# self.get_logger().info("x_x 12: ") # -------------------------------------
+			self.drive_path(path)
+			executed = True
+		else:
+			b = polygon.bounds
+			self.get_logger().warn(
+				"trapezoid path empty: area=%.3f, bounds=[%.3f,%.3f,%.3f,%.3f], width=%.3f, clearance=%.3f"
+				% (polygon.area, b[0], b[1], b[2], b[3], self.robot_width, self.coverage_clearance)
+			)
+			if not self.border_drive:
+				path_rotated = border_calc_path(poly_rotated, self.robot_width, clearance=self.coverage_clearance)
+				if path_rotated:
+					path = rotate_points(path_rotated, -angle)
+					self.drive_path(path)
+					executed = True
+				else:
+					self.get_logger().warn("border fallback also empty, no coverage for this cell")
 		# self.get_logger().info("x_x 13: ") # -------------------------------------
 
 		# cleanup
-		self.visualize_cell(polygon.exterior.coords[:], False)
+		if executed and (not self.show_all_cells):
+			self.visualize_cell(polygon.exterior.coords[:], False)
 		#self.get_logger().info("x_x 14: ") # -------------------------------------
 		self.get_logger().debug("Polygon done")
 		

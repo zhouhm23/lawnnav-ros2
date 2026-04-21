@@ -1,7 +1,7 @@
 rtabmap:
   ros__parameters:
-    'Grid/RangeMin': '0.02'
-    'Grid/RangeMax': '5.0'
+    'Grid/RangeMin': '0.03'
+    'Grid/RangeMax': '4.0'
     'Grid/CellSize': '0.05'
     # Ground projection / detection
     'Grid/MinGroundHeight': '-0.20'

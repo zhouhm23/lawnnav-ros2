@@ -2,14 +2,14 @@ from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch import LaunchService
 from launch.substitutions import LaunchConfiguration
-from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable, OpaqueFunction
 import os
 from ament_index_python.packages import get_package_share_directory
 
-def generate_launch_description():
-
+def launch_setup(context):
     use_sim_time = LaunchConfiguration('use_sim_time')
     qos = LaunchConfiguration('qos')
+    localization = LaunchConfiguration('localization').perform(context)
 
     parameters={
           'frame_id':'base_footprint',
@@ -21,20 +21,30 @@ def generate_launch_description():
           'qos_image':qos,
           'qos_imu':qos,
           # RTAB-Map's parameters should be strings:
-          'queue_size': 50,
+          'queue_size': 30,
           'Reg/Strategy':'1',
           'Reg/Force3DoF':'true',
-          'RGBD/NeighborLinkRefining':'true',
+          'RGBD/NeighborLinkRefining':'false',
+          'Rtabmap/DetectionRate':'8',
+          'RGBD/LinearUpdate':'0.10',
+          'RGBD/AngularUpdate':'0.10',
+          'Vis/MaxFeatures':'800',
+          'OdomF2M/MaxSize':'1000',
           # Lower RangeMin so near points are not discarded (useful for close-to-robot ground)
-          'Grid/RangeMin':'0.02',
+          'Grid/RangeMin':'0.04',
           # Ensure a sensible max range for projection and grid
-          'Grid/RangeMax':'5.0',
+          'Grid/RangeMax':'3.5',
           'Grid/CellSize':'0.05',
+          'Grid/MinGroundHeight':'0.20',
+          'Grid/MaxGroundHeight':'0.50',
+          'Grid/MapFrameProjection':'true',
+          'Grid/MaxGroundAngle':'45',
+          'Grid/GroundIsObstacle':'true',
           # Parameters that influence ground projection (may be ignored if node doesn't declare them)
           'proj_max_ground_height':'0.20',
           'proj_max_ground_angle':'45',
           'RGBD/ProximityBySpace':'true',
-          'RGBD/ProximityPathMaxNeighbors':'10',
+          'RGBD/ProximityPathMaxNeighbors':'5',
           'Optimizer/GravitySigma':'0', # Disable imu constraints (we are already in 2D)
           # 'Vis/CorType': '0',
           # 'OdomF2M/MaxSize': '4000',
@@ -42,6 +52,7 @@ def generate_launch_description():
           # 'Optimizer/Slam2D': 'true',
           'grid_size': '20',
           'Grid/Sensor': 'true',
+          'Grid/3D': 'true',
           # 'RGBD/ProximityPathMaxNeighbors': '10',
           # 'proj_max_ground_height': '0.01',
           # 'proj_max_ground_angle': '10',
@@ -62,6 +73,29 @@ def generate_launch_description():
     nav_share = get_package_share_directory('navigation')
     rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params.yaml')
 
+    # Logic for localization vs mapping
+    # Localization: Mem/IncrementalMemory=false, Mem/InitWMWithAllNodes=true
+    # Mapping: Mem/IncrementalMemory=true, Mem/InitWMWithAllNodes=false
+    
+    is_localization = (localization == 'true')
+    
+    rtabmap_parameters = [parameters, rtabmap_params_file, 
+                          {'Mem/IncrementalMemory': 'false' if is_localization else 'true',
+                           'Mem/InitWMWithAllNodes': 'true' if is_localization else 'false'}]
+    
+    return [
+        Node(
+            package='rtabmap_sync', executable='rgbd_sync', output='screen',
+            parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.008, 'use_sim_time':use_sim_time, 'qos':qos}],
+            remappings=remappings),
+
+        Node(
+            package='rtabmap_slam', executable='rtabmap', output='screen',
+            parameters=rtabmap_parameters,
+            remappings=remappings),
+    ]
+
+def generate_launch_description():
     return LaunchDescription([
 
         # Launch arguments
@@ -72,18 +106,12 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'qos', default_value='2',
             description='QoS used for input sensor topics'),
-            
-        # Nodes to launch
-        Node(
-            package='rtabmap_sync', executable='rgbd_sync', output='screen',
-            parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.008, 'use_sim_time':use_sim_time, 'qos':qos}],
-            remappings=remappings),
 
-        # SLAM mode:
-                Node(
-                        package='rtabmap_slam', executable='rtabmap', output='screen',
-                        parameters=[parameters, rtabmap_params_file, {'Mem/IncrementalMemory':'True'}],
-                        remappings=remappings),
+        DeclareLaunchArgument(
+            'localization', default_value='false',
+            description='Launch in localization mode.'),
+            
+        OpaqueFunction(function=launch_setup)
     ])
 
 if __name__ == '__main__':

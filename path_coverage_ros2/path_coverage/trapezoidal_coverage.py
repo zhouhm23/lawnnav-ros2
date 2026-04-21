@@ -14,15 +14,17 @@ if __name__ == "__main__":
 
 
 
-def calc_path(poly, robot_width, bStartTop=False):
+def calc_path(poly, robot_width, bStartTop=False, clearance=0.0):
 	"""
 	Takes in a monotone shapely Polygon without obstacles and calculates a coverage path with given width through it
 	"""
 	ret = []
 	up = False
 
-	# Reduce size of polygon by half of the robot width for clearance
-	poly_inner = poly.buffer(-robot_width / 2.0, join_style=2)
+	# Reduce size of polygon by configurable clearance for boundary safety.
+	# clearance=0 means strips can reach the polygon boundary.
+	clearance = max(0.0, float(clearance))
+	poly_inner = poly.buffer(-clearance, join_style=2)
 
 	if poly_inner.is_empty:
 		# No polygon left after buffering, cannot generate a path
@@ -49,6 +51,12 @@ def calc_path(poly, robot_width, bStartTop=False):
 		if x > maxx:
 			x = maxx
 
+		# Add buffer to ensure start and end strips are included
+		if i == 0:
+			x = minx + 1e-3
+		elif i == int(plows):
+			x = maxx - 1e-3
+
 		# Get the vertical line that intersects the polygon at the current x
 		vertline = LineString([(x, miny - 1), (x, maxy + 1)])
 		
@@ -58,13 +66,23 @@ def calc_path(poly, robot_width, bStartTop=False):
 				continue
 
 			# Handle different intersection types
-			if "LineString" in intersections.geom_type:
+			if intersections.geom_type == "LineString":
 				coords = intersections.coords[:]
-			elif "MultiLineString" in intersections.geom_type:
+			elif intersections.geom_type == "MultiLineString":
 				# If multiple segments, take the bottom-most and top-most points
 				all_points = []
 				for line in intersections.geoms:
 					all_points.extend(line.coords[:])
+				min_y_point = min(all_points, key=lambda p: p[1])
+				max_y_point = max(all_points, key=lambda p: p[1])
+				coords = [min_y_point, max_y_point]
+			elif intersections.geom_type == "GeometryCollection":
+				all_points = []
+				for geom in intersections.geoms:
+					if geom.geom_type == "LineString":
+						all_points.extend(geom.coords[:])
+				if not all_points:
+					continue
 				min_y_point = min(all_points, key=lambda p: p[1])
 				max_y_point = max(all_points, key=lambda p: p[1])
 				coords = [min_y_point, max_y_point]

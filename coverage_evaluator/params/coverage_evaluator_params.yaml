@@ -1,0 +1,23 @@
+coverage_evaluator:
+  ros__parameters:
+    clicked_point_topic: /clicked_point
+    global_frame: map
+    base_frame: base_footprint
+
+    # Grid resolution in meters (< 0.01 for finer than 1cm)
+    resolution: 0.005
+
+    # Click close to the first point to close the polygon
+    close_distance: 0.08
+
+    # Reject tiny polygons
+    min_polygon_area: 0.05
+
+    # Coverage radius (meters). Roughly half of robot width or sensor swath/2.
+    coverage_radius: 0.12
+
+    update_hz: 10.0
+    publish_hz: 2.0
+
+    # Set <=0 to disable periodic console logs
+    log_period_sec: 1.0

@@ -6,9 +6,10 @@ from shapely.geometry import Polygon, Point
 from shapely import affinity
 
 
-def border_calc_path(poly, width, bStartTop=False):
-	# Border path is polygon reduced by width
-	poly_inner = poly.buffer(-width/2.0)
+def border_calc_path(poly, width, bStartTop=False, clearance=0.0):
+	# Border path is polygon reduced by configurable clearance
+	clearance = max(0.0, float(clearance))
+	poly_inner = poly.buffer(-clearance)
 
 	(minx, miny, maxx, maxy) = poly_inner.bounds
 	lower_left_edge = [minx, miny]

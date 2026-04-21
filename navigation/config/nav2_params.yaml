@@ -30,7 +30,7 @@ amcl:
     save_pose_rate: 0.5
     sigma_hit: 0.2
     tf_broadcast: true
-    transform_tolerance: 1.0
+    transform_tolerance: 0.5
     update_min_a: 0.2
     update_min_d: 0.25
     z_hit: 0.5
@@ -138,11 +138,11 @@ local_costmap:
       resolution: 0.03
       transform_tolerance: 0.5
       robot_radius: 0.05
-      plugins: ["voxel_layer", "inflation_layer"]
+      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.05
+        cost_scaling_factor: 1.0
+        inflation_radius: 0.10
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -154,7 +154,7 @@ local_costmap:
         mark_threshold: 0
         observation_sources: cloud
         cloud:
-          topic: /rtabmap/cloud_map
+          topic: /rtabmap/cloud_obstacles
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -165,6 +165,7 @@ local_costmap:
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
         map_subscribe_transient_local: True
       always_send_full_costmap: True
   local_costmap_rclcpp_node:
@@ -208,8 +209,8 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 5.0
-        inflation_radius: 0.05
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.10
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:
@@ -242,7 +243,7 @@ planner_server:
       plugin: "nav2_navfn_planner/NavfnPlanner"
       tolerance: 0.1
       use_astar: true
-      allow_unknown: true
+      allow_unknown: false
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -276,7 +277,7 @@ behavior_server:
       plugin: "nav2_behaviors/AssistedTeleop"
     global_frame: odom
     robot_base_frame: base_footprint
-    transform_tolerance: 0.1
+    transform_tolerance: 0.5
     use_sim_time: False
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
