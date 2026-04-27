@@ -5,6 +5,32 @@
 
 其中，路径覆盖规划核心功能基于开源项目 `path_coverage_ros2`（https://github.com/nirmalka94/path_coverage_ros2/tree/main）进行二次开发与深度定制，在原项目 Boustrophedon 分解与基础路径生成能力的基础上，完成了与 Nav2 导航栈的深度联动、执行逻辑优化、参数调优及多传感器融合适配。
 
+## 使用方法
+启动视觉导航：
+推荐一键启动（无需可执行权限，避免后台终端权限问题）：
+python3 start_path_coverage.py
+
+如需简化终端输出（仅保留警告/错误）：
+python3 start_path_coverage.py --quiet
+
+兼容旧命令（内部会转到 Python 启动器）：
+bash start_path_coverage.sh
+
+当前一键启动会自动执行以下流程：
+~/.stop_ros.sh
+rm -f /home/ubuntu/.ros/rtabmap.db
+ros2 launch navigation rtabmap_navigation.launch.py localization:=false
+ros2 launch navigation rviz_rtabmap_navigation.launch.py
+
+如需使用原始分终端方式：
+终端1 ~/.stop_ros.sh # 关闭手机控制app
+rm -f /home/ubuntu/.ros/rtabmap.db
+终端2	ros2 launch navigation rtabmap_navigation.launch.py localization:=false # 启动视觉导航
+终端3	ros2 launch navigation rviz_rtabmap_navigation.launch.py # 在rviz中显示
+
+点击左边的add，by topic中找到path_coverage_marker，点击OK
+然后在地图上点击publish point，检测到接近闭合后开始运行。
+
 ## 开发历程
 ### 阶段一：最小闭环搭建（2025.11）
 - **Commit 6ae4019**：基于开源 `path_coverage_ros2` 框架新增路径覆盖主控节点 `path_coverage_node.py`，建立 `MapDrive` 主节点，接入 `NavigateToPose/ComputePathToPose` 动作客户端，订阅全局与局部代价地图，实现 RViz 点击区域采集、Boustrophedon 分解、路径插值、Marker 可视化与位姿结果输出功能。
@@ -21,6 +47,9 @@
 - **Commit 0c3a44c**：初步增加地面颜色识别功能，新增地面投影/高度阈值相关参数，在导航与 SLAM 启动中挂载参数文件，增加点云颜色检查、区域 RGB 打印和地图数据结构检查工具，补充一键联动脚本 `launch_ccpp.sh`。
 - **Commit 245d5a0**：面向标准化测试进行系统级工程化升级，新增 `CoverageEvaluator` 模块（多边形圈选、网格化覆盖率计算、TF 坐标转换、实时覆盖率发布与 reset 服务），Nav2 增加 `static_layer`、调整膨胀半径与代价值衰减、限制 `allow_unknown`，RTAB-Map 启动支持 `localization/mapping` 模式切换与检测频率调优，覆盖规划新增 `polygon_expand`、`coverage_clearance`、执行阶段更严格代价阈值与静态图掩膜选项，新增离线分解预览脚本，引入毫米波雷达串口与帧处理模块，强化颜色叠加节点的 TF 健壮性、重发布与可视化参数。
 - **Commit 8f871ed**：清理非源码产物，删除误提交的临时二进制文件 `core`。
+
+## 测试历程
+1.固定路径运动测试：nav2发布位置运动到(0,1.8)，
 
 ## 核心模块说明
 1. **路径覆盖规划模块**：基于开源项目 `path_coverage_ros2` 二次开发，在原项目 Boustrophedon 分解、基础路径生成能力的基础上，完成了与 Nav2 导航栈的深度联动，新增异步目标发送、超时判定、连续航点执行、参数调优、静态图掩膜等功能，核心文件为 `path_coverage_node.py`、`path_coverage_params.yaml`。
