@@ -1,0 +1,20 @@
+rtabmap:
+  ros__parameters:
+    'Grid/RangeMin': '0.03'
+    'Grid/RangeMax': '4.0'
+    'Grid/CellSize': '0.05'
+    # Ground projection / detection
+    'Grid/MinGroundHeight': '-0.20'
+    'Grid/MaxGroundHeight': '0.50'
+    'Grid/MaxGroundAngle': '30'
+    'Grid/MapFrameProjection': 'true'
+    'proj_max_ground_height': '0.20'
+    'proj_max_ground_angle': '20'
+    'RGBD/ProximityBySpace': 'true'
+    'RGBD/ProximityPathMaxNeighbors': '10'
+    'RGBD/CreateOccupancyGrid': 'true'
+    'queue_size': 50
+    'subscribe_rgbd': true
+    'subscribe_scan': true
+    'Reg/Strategy': '1'
+    'Reg/Force3DoF': 'true'
