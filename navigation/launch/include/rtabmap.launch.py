@@ -33,13 +33,13 @@ def launch_setup(context):
           # Lower RangeMin so near points are not discarded (useful for close-to-robot ground)
           'Grid/RangeMin':'0.04',
           # Ensure a sensible max range for projection and grid
-          'Grid/RangeMax':'3.5',
+          'Grid/RangeMax':'10.0',
           'Grid/CellSize':'0.05',
-          'Grid/MinGroundHeight':'0.20',
+          'Grid/MinGroundHeight':'-0.20',
           'Grid/MaxGroundHeight':'0.50',
           'Grid/MapFrameProjection':'true',
           'Grid/MaxGroundAngle':'45',
-          'Grid/GroundIsObstacle':'true',
+          'Grid/GroundIsObstacle':'false',
           # Parameters that influence ground projection (may be ignored if node doesn't declare them)
           'proj_max_ground_height':'0.20',
           'proj_max_ground_angle':'45',
