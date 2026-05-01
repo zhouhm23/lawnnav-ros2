@@ -2,17 +2,17 @@ rtabmap:
   ros__parameters:
     # RTAB-Map parameters (strings are safer for packaged binary)
     'Grid/RangeMin': '0.04'
-    'Grid/RangeMax': '3.5'
+    'Grid/RangeMax': '10.0'
     'Grid/CellSize': '0.05'
     # Ground projection / detection
     # Ground height thresholds (reverted to previous values)
-    'Grid/MinGroundHeight': '0.20'
+    'Grid/MinGroundHeight': '-0.20'
     'Grid/MaxGroundHeight': '0.50'
     'Grid/MaxGroundAngle': '45'
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'false'
     'Grid/3D': 'true'
-    'Grid/GroundIsObstacle': 'true'
+    'Grid/GroundIsObstacle': 'false'
     'proj_max_ground_height': '0.20'
     'proj_max_ground_angle': '45'
     'RGBD/ProximityBySpace': 'true'
