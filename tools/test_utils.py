@@ -81,6 +81,61 @@ class CSVLogger:
 
 
 # ---------------------------------------------------------------------------
+# AppendingCSVLogger — fixed-file, append-mode CSV with auto-increment run_id
+# ---------------------------------------------------------------------------
+
+class AppendingCSVLogger:
+    """CSV writer that appends to a **fixed** file path (no timestamp).
+    Auto-creates with headers on first use; appends on subsequent calls.
+    Each row gets an auto-incrementing ``run_id``.
+
+    Usage
+    -----
+        logger = AppendingCSVLogger("/path/to/results.csv", ["col1","col2"])
+        logger.add_row([1.23, 4.56])   # run_id prepended automatically
+        logger.close()
+    """
+
+    def __init__(self, filepath: str, headers: list):
+        self.filepath = filepath
+        self._headers = headers
+        self._next_run_id = 1
+        os.makedirs(os.path.dirname(filepath) or '.', exist_ok=True)
+
+        exists = os.path.exists(filepath)
+        self._file = open(filepath, 'a', newline='', encoding='utf-8')
+        self._writer = csv.writer(self._file)
+
+        if not exists or os.path.getsize(filepath) == 0:
+            # Fresh file — write header row
+            self._writer.writerow(["run_id"] + headers)
+            self._file.flush()
+        else:
+            # Existing file — infer next run_id from last data row
+            with open(filepath, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+                if len(rows) > 1:
+                    try:
+                        self._next_run_id = int(rows[-1][0]) + 1
+                    except (ValueError, IndexError):
+                        self._next_run_id = len(rows)  # fallback
+
+    def add_row(self, row: list) -> None:
+        """Write a data row, prepending the current ``run_id``."""
+        self._writer.writerow([self._next_run_id] + row)
+        self._file.flush()
+
+    @property
+    def run_id(self) -> int:
+        """The run_id that will be used for the **next** ``add_row`` call."""
+        return self._next_run_id
+
+    def close(self) -> None:
+        self._file.close()
+
+
+# ---------------------------------------------------------------------------
 # StuckDetector
 # ---------------------------------------------------------------------------
 
@@ -261,6 +316,76 @@ def rotate_360(node,
     twist.angular.z = 0.0
     cmd_vel_pub.publish(twist)
     return phase == "returning" and yaw_diff <= BACK_HOME_THRESHOLD
+
+
+# ---------------------------------------------------------------------------
+# rotate_by_angle — closed-loop rotation by a specified angle
+# ---------------------------------------------------------------------------
+
+def rotate_by_angle(node,
+                    cmd_vel_pub,
+                    get_yaw_fn,
+                    angle_rad: float,
+                    angular_speed: float = 0.5,
+                    timeout: float = 30.0) -> bool:
+    """Rotate robot by *angle_rad* radians.  Positive = CCW.
+
+    Uses cumulative yaw delta tracking.  Accumulated sum converges to target.
+    Returns True on success.
+    """
+    logger = node.get_logger()
+
+    start_yaw = None
+    deadline = time.time() + 5.0
+    while start_yaw is None and time.time() < deadline and rclpy.ok():
+        rclpy.spin_once(node, timeout_sec=0.1)
+        start_yaw = get_yaw_fn()
+    if start_yaw is None:
+        logger.error("rotate_by_angle: no localization after 5 s")
+        return False
+
+    twist = Twist()
+    twist.angular.z = float(angular_speed)
+    prev_yaw = start_yaw
+    cumulative = 0.0
+    target = abs(angle_rad)
+    start_time = time.time()
+
+    dir_str = "CCW" if angular_speed > 0 else "CW"
+    logger.info(
+        f"rotate_by_angle: {dir_str} {math.degrees(target):.0f}deg "
+        f"(cmd {abs(angular_speed):.2f} rad/s)"
+    )
+
+    while rclpy.ok():
+        cmd_vel_pub.publish(twist)
+        rclpy.spin_once(node, timeout_sec=0.1)
+
+        yaw = get_yaw_fn()
+        if yaw is not None:
+            delta = normalize_angle(yaw - prev_yaw)
+            cumulative += delta
+            prev_yaw = yaw
+
+        elapsed = time.time() - start_time
+
+        if abs(cumulative) >= target * 0.95:
+            logger.info(
+                f"rotate_by_angle: reached {math.degrees(abs(cumulative)):.1f}deg "
+                f"in {elapsed:.1f} s"
+            )
+            break
+
+        if elapsed > timeout:
+            logger.error(
+                f"rotate_by_angle: TIMEOUT after {elapsed:.1f} s — "
+                f"cumulative {math.degrees(abs(cumulative)):.1f}deg"
+            )
+            break
+
+    twist.angular.z = 0.0
+    cmd_vel_pub.publish(twist)
+    return abs(cumulative) >= target * 0.90
 
 
 # ---------------------------------------------------------------------------

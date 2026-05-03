@@ -61,3 +61,13 @@ python3 tools/test3_measure_map_quality.py
 ```bash
 python3 tools/test2_measure_trajectory_error.py
 ```
+
+## 
+```bash
+python3 tools/test4_measure_map_accuracy.py
+python3 -c "
+import pandas as pd
+df = pd.read_csv('tools/obstacle_dimension_accuracy.csv')
+print(df[['run_id','err_l_m','err_w_m','err_h_m','mean_vertex_err']].describe())
+"
+```
