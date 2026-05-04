@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-goal_all.py
+goal_all.py — DEPRECATED: 请使用 test1_slam_nav_test.py --mode all 代替。
 Navigate through all 4 goal points sequentially with collision
 stuck detection, per-goal timeout, and CSV pose logging at the end.
 """

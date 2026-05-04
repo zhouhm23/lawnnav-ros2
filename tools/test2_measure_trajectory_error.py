@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-test2_measure_trajectory_error.py
+test2_measure_trajectory_error.py — DEPRECATED: 请使用 test1_slam_nav_test.py --mode rpe 代替。
 Navigate through 4 goal points continuously while logging
 theoretical-vs-actual trajectory error at 1 Hz.
 """

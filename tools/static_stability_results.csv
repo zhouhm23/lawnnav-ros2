@@ -1,0 +1,4 @@
+run_id,timestamp,sample_count,duration_sec,rmse_pos_m,rmse_yaw_deg,max_drift_pos_m,max_drift_yaw_deg,min_pos_m,max_pos_m,mean_pos_m,min_yaw_deg,max_yaw_deg,mean_yaw_deg,raw_csv_path,notes
+1,1777880316.822,61,60,0.000000,0.011815,0.000000,0.035803,0.000000,0.000000,0.000000,0.000000,0.035803,0.009593,/home/ubuntu/ros2_ws/src/tools/pose_log_20260504_073736.csv,
+2,1777881143.059,46,60,0.000000,0.025600,0.000000,0.063906,0.000000,0.000000,0.000000,0.000000,0.063906,0.020269,/home/ubuntu/ros2_ws/src/tools/pose_log_20260504_075122.csv,
+3,1777881706.123,121,60,0.000000,0.013570,0.000000,0.038616,0.000000,0.000000,0.000000,0.000000,0.038616,0.010499,/home/ubuntu/ros2_ws/src/tools/pose_log_20260504_080046.csv,

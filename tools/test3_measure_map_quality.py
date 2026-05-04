@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""test3_measure_map_quality.py — multi-source map quality measurement."""
+"""test3_measure_map_quality.py — DEPRECATED: 地图尺寸精度改为全人工测试，不再使用此脚本。
+multi-source map quality measurement."""
 import sys, time, math, rclpy
 from math import floor, ceil
 from rclpy.node import Node
