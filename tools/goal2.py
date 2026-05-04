@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-goal2.py
+goal2.py — DEPRECATED: 请使用 test1_slam_nav_test.py --mode rpe 代替。
 Navigate to a single goal point with collision stuck detection and timeout.
 """
 

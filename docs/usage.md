@@ -47,27 +47,13 @@ ros2 launch navigation rviz_rtabmap_navigation.launch.py
 ### 👉 终端 3：执行测试与功能脚本
 在终端 1 和 2 共同构成稳定的基础环境后，可在终端 3 运行不同的功能模块。
 
-**情景 A：执行全区域路径覆盖规划**
 ```bash
-ros2 launch path_coverage path_coverage.launch.py
-```
+# 仅闭合路径相对位姿误差 (RPE) — 导航 + 逐点人工输入地面真值
+python3 tools/test1_slam_nav_test.py --mode rpe
 
-**情景 B：执行建图空地测算量化测试 (`test3`)**
-```bash
-python3 tools/test3_measure_map_quality.py
-```
+# 仅静态定位稳定性 — 60s 静止记录 5Hz 采样
+python3 tools/test1_slam_nav_test.py --mode static
 
-**情景 C：执行运动路径误差测量测试 (`test2`)**
-```bash
-python3 tools/test2_measure_trajectory_error.py
-```
-
-## 
-```bash
-python3 tools/test4_measure_map_accuracy.py
-python3 -c "
-import pandas as pd
-df = pd.read_csv('tools/obstacle_dimension_accuracy.csv')
-print(df[['run_id','err_l_m','err_w_m','err_h_m','mean_vertex_err']].describe())
-"
+# 全部测试（先 RPE 后 static）
+python3 tools/test1_slam_nav_test.py --mode all
 ```
