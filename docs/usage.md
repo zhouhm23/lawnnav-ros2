@@ -56,4 +56,17 @@ python3 tools/test1_slam_nav_test.py --mode static
 
 # 全部测试（先 RPE 后 static）
 python3 tools/test1_slam_nav_test.py --mode all
+
+# ── Test 2: 导航控制与避障指标 ──────────────────────────────────────────
+# 仅直线跟踪横向误差 (CTE) — 1→2 导航 + 1Hz 采样
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode cte
+
+# 仅避障测试 1→3 ×3 遍 — 每次只测一条路径避免累计漂移
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 1to3
+
+# 仅避障测试 4→2 ×3 遍（测完 1→3 后重启脚本执行此条）
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 4to2
+
+# 全部测试（仅 CTE）
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode all
 ```
