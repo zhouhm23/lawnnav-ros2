@@ -1,72 +1,60 @@
-# 使用方法与操作指南
+# 使用方法
 
-## 一键启动方式
-
-推荐使用脚本一键启动系统（注意：目前不包括启动路径覆盖本身）：
+## 一键启动
 
 ```bash
-python3 tools/start_path_coverage.py
+python3 tools/start_path_coverage.py         # 默认
+python3 tools/start_path_coverage.py --quiet # 安静模式
+bash tools/start_path_coverage.sh            # Shell 兼容包装
 ```
-
-**其他启动选项：**
-- **安静模式**（精简终端输出，仅保留警告和错误）：
-  ```bash
-  python3 tools/start_path_coverage.py --quiet
-  ```
-- **兼容旧指令**（内部会转换为 Python 启动器）：
-  ```bash
-  bash tools/start_path_coverage.sh
-  ```
 
 ---
 
-## 终端分步手动启动与测试流程
+## 分步手动启动
 
-实际工作与调试测试中，需要多个终端相互配合。**终端 1** 和 **终端 2** 是整个系统的**基础启动环境**，任何测试都必须依赖它们先行运行。**终端 3** 及其他终端用于按需运行具体的测试脚本。
+### 终端 1：SLAM + 导航
 
-### 👉 终端 1：基础启动环境（SLAM与导航栈）
-此终端主要负责清理历史状态，并启动核心建图与导航进程。
 ```bash
-# 1. 关闭手机控制 APP，节约系统性能
 ~/.stop_ros.sh
-
-# 2. 删除之前的地图缓存数据（确保每次启动是全新的建图环境）
 rm -f /home/ubuntu/.ros/rtabmap.db
-
-# 3. 启动视觉导航与 SLAM（非纯定位模式）
 ros2 launch navigation rtabmap_navigation.launch.py localization:=false
 ```
 
-### 👉 终端 2：基础启动环境（RViz 可视化界面）
-此终端用于启动用户界面，以从视觉上监控建图效果和导航状态。
-*(请在终端 1 的程序完全拉起后再启动)*
+### 终端 2：RViz
+
 ```bash
 ros2 launch navigation rviz_rtabmap_navigation.launch.py
 ```
 
-### 👉 终端 3：执行测试与功能脚本
-在终端 1 和 2 共同构成稳定的基础环境后，可在终端 3 运行不同的功能模块。
+### 终端 3：按需运行
+
+**A. 执行覆盖路径规划：**
 
 ```bash
-# 仅闭合路径相对位姿误差 (RPE) — 导航 + 逐点人工输入地面真值
-python3 tools/test1_slam_nav_test.py --mode rpe
+ros2 launch path_coverage path_coverage.launch.py
+# 在 RViz 中用 Publish Point 点击圈选区域，自动开始覆盖
+```
 
-# 仅静态定位稳定性 — 60s 静止记录 5Hz 采样
-python3 tools/test1_slam_nav_test.py --mode static
+**B. 监控覆盖率（仅依赖 SLAM 位姿）：**
 
-# 全部测试（先 RPE 后 static）
-python3 tools/test1_slam_nav_test.py --mode all
+```bash
+ros2 launch coverage_evaluator coverage_evaluator.launch.py
+# 在 RViz 中用 Publish Point 点击 ≥3 个点圈选区域（末点靠近首点自动闭合）
+# 终端会每秒打印覆盖率日志
+# 查看实时覆盖率 topic: ros2 topic echo /coverage_ratio
+# 切换区域：ros2 service call /reset std_srvs/srv/Empty
+```
 
-# ── Test 2: 导航控制与避障指标 ──────────────────────────────────────────
-# 仅直线跟踪横向误差 (CTE) — 1→2 导航 + 1Hz 采样
-python3 tools/test2_nav_cte_and_obstacle_test.py --mode cte
+**C. 运行标准测试：**
 
-# 仅避障测试 1→3 ×3 遍 — 每次只测一条路径避免累计漂移
-python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 1to3
+```bash
+# test1: SLAM 综合测试
+python3 tools/test1_slam_nav_test.py --mode rpe     # 闭合路径 RPE
+python3 tools/test1_slam_nav_test.py --mode static  # 静态定位稳定性
+python3 tools/test1_slam_nav_test.py --mode all     # 全部
 
-# 仅避障测试 4→2 ×3 遍（测完 1→3 后重启脚本执行此条）
-python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 4to2
-
-# 全部测试（仅 CTE）
-python3 tools/test2_nav_cte_and_obstacle_test.py --mode all
+# test2: 导航控制测试
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode cte                     # 直线 CTE
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 1to3    # 避障 1→3
+python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 4to2    # 避障 4→2
 ```

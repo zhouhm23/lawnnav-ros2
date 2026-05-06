@@ -4,7 +4,10 @@ Welcome to the central repository documentation for the ROS2-based path coverage
 
 To keep documentation clean, modular, and easy to navigate safely as the codebase scales, all primary details have been split into the dedicated `docs/` folder. Please refer to the specific topics below:
 
-*   📖 [**Usage and Operations Guide**](./docs/usage.md)  
+*    [**Package Descriptions**](./docs/packages.md)  
+    Overview of all functional packages (`path_coverage`, `coverage_evaluator`) and learning/demo packages (`auto_mower`).
+
+*   �📖 [**Usage and Operations Guide**](./docs/usage.md)  
     How to quickly start the main system with `start_path_coverage.py` and instructions detailing the manual 3-Terminal execution procedure.
 
 *   🚧 [**Testing and Tuning**](./docs/testing_and_tuning.md)  
