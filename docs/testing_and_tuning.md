@@ -345,6 +345,7 @@ $$e_{yaw} = |\operatorname{normalize}(\psi_{slam} - \psi_{goal})|$$
 
 ## 三、踩坑记录
 
+0. **git**：不能在~下git提交（这里似乎有其他.git），要在~/ros2_ws/src下git提交
 1. **旋转检测不能用累计 delta** -- spin频率 > 定位频率时重复读同值，delta=0 填充 StuckDetector 误判。
 2. **全周旋转不能用绝对目标 yaw** -- `normalize(start+2pi) == start`，起点即终点。
 3. **RTAB-Map 下 /map 无人发布** -- localization.launch 不启动，map_server 不运行。正确源是 `/global_costmap/costmap`。
