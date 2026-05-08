@@ -1,17 +1,15 @@
-# Path Coverage ROS2 Navigation System
+# 全覆盖路径 ROS2 导航系统
+欢迎查阅基于 ROS2 的全覆盖路径与自主导航项目**核心仓库文档**。
 
-Welcome to the central repository documentation for the ROS2-based path coverage and autonomous navigation project.
+所有核心详细说明均已拆分至专属 `docs/` 文件夹中。可参阅以下专题文档：
 
-To keep documentation clean, modular, and easy to navigate safely as the codebase scales, all primary details have been split into the dedicated `docs/` folder. Please refer to the specific topics below:
+*   [**功能包说明**](./docs/packages.md)  
+    介绍所有功能包。
+*   [**使用与操作指南**](./docs/usage.md)  
+    说明**手动运行**操作流程。
 
-*    [**Package Descriptions**](./docs/packages.md)  
-    Overview of all functional packages (`path_coverage`, `coverage_evaluator`) and learning/demo packages (`auto_mower`).
+*   [**测试与参数调优**](./docs/testing_and_tuning.md)  
+    讲解测试脚本；附带历史问题日志调优表，以及参数说明。
 
-*   �📖 [**Usage and Operations Guide**](./docs/usage.md)  
-    How to quickly start the main system with `start_path_coverage.py` and instructions detailing the manual 3-Terminal execution procedure.
-
-*   🚧 [**Testing and Tuning**](./docs/testing_and_tuning.md)  
-    Explanation of the specific scripts used to validate trajectory paths (`test2`), measure 2D occupation grid completeness (`test3`), along with tuning tables detailing past issue logs and the `MinGroundHeight` SLAM floor resolution.
-
-*   🛠️ [**Development and Architecture**](./docs/development.md)  
-    A history log detailing modular iteration implementations (e.g., path subdivision mechanisms, map color semantic overlaying). It lists the core packages forming this codebase and references the foundational open-source codebases.
+*   [**开发架构与迭代记录**](./docs/development.md)  
+    记录模块化迭代开发历程；罗列本项目代码库的核心功能包。

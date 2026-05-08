@@ -141,7 +141,10 @@ python3 tools/test2_nav_cte_and_obstacle_test.py --mode all                    #
 
 | 路径 | 起点 | 终点 | 类型 |
 |------|------|------|------|
-| 1→2 | (0, 0) | (1.8, 0) | 无遮挡直线，y≡0，1.8m |
+| 1→2 | (0, 0) | (1.8, 0) | CTE 闭合矩形第1段，水平 y≡0，1.8m |
+| 2→3 | (1.8, 0) | (1.8, -1.0) | CTE 闭合矩形第2段，竖直 x≡1.8，1.0m |
+| 3→4 | (1.8, -1.0) | (0, -1.0) | CTE 闭合矩形第3段，水平 y≡-1.0，1.8m |
+| 4→1 | (0, -1.0) | (0, 0) | CTE 闭合矩形第4段，竖直 x≡0，1.0m |
 | 1→3 | (0, 0) | (1.8, -1.0) | 对角线绕障（障碍物箱 ~(1.2, -0.5)） |
 | 4→2 | (0, -1.0) | (1.8, 0) | 对角线绕障 |
 
@@ -149,15 +152,15 @@ python3 tools/test2_nav_cte_and_obstacle_test.py --mode all                    #
 
 ---
 
-#### CTE 模式 — 路径跟踪横向误差
+#### CTE 模式 — 闭合矩形路径跟踪横向误差
 
 | 项目 | 说明 |
 |------|------|
-| 流程 | 先导航到起点 1，再沿 1→2 直线导航，期间以 1Hz 采样 SLAM 位姿 |
-| 轨迹集 | P_tr = {p_0, p_1, ..., p_K}，每个轨迹点含 (t, x, y, yaw) |
-| 期望路径 | 起点 (0,0) → 终点 (1.8,0) 连线，即 y≡0 水平直线 |
-| 横向误差 | e_cte,k = \|p_y\|（轨迹点到期望直线的垂距） |
-| 输出 | `tools/cte_results.csv`（汇总）+ `tools/trajectory_cte_<ts>.csv`（原始轨迹） |
+| 流程 | 先导航到起点 1，再沿闭合矩形 1→2→3→4→1 逐段导航，每段以 1Hz 采样 SLAM 位姿 |
+| 轨迹集 | 每段独立 P_tr = {p_0, p_1, ..., p_K}，每个轨迹点含 (t, x, y, yaw) |
+| 期望路径 | 每段为轴对齐直线：1→2: y≡0; 2→3: x≡1.8; 3→4: y≡-1.0; 4→1: x≡0 |
+| 横向误差 | 水平段: e_cte,k = \|p_y - y_ref\|；竖直段: e_cte,k = \|p_x - x_ref\| |
+| 输出 | `tools/cte_results.csv`（逐段+整体汇总）+ `tools/trajectory_cte_{label}_{ts}.csv`（段原始轨迹） |
 
 **CTE 指标公式**：
 
@@ -167,17 +170,11 @@ $$e_{cte,MAX} = \max\{e_{cte,k}\}$$
 
 **CTE 结果记录**：
 
-| Run | 轨迹点数 | 耗时(s) | CTE RMSE (m) | Max CTE (m) | 备注 |
-|:---:|:---:|:---:|:---:|:---:|:---|
-| 1 | 16 | 14.9 | 0.0009 | 0.0023 | |
-| 2 | 16 | 14.8 | 0.0010 | 0.0022 | |
-| 3 | 17 | 16.1 | 0.0006 | 0.0016 | |
-| 4 | 16 | 14.9 | 0.0007 | 0.0012 | |
-| 5 | 16 | 15.0 | 0.0008 | 0.0019 | |
-| 6 | 16 | 14.8 | 0.0009 | 0.0014 | |
-| **Mean±Std** | **16.2** | **15.1** | **0.0008±0.0001** | **0.0018±0.0004** | |
+| Run | 1→2 RMSE | Max | 2→3 RMSE | Max | 3→4 RMSE | Max | 4→1 RMSE | Max | 整体 RMSE | 整体 Max | 备注 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| — | — | — | — | — | — | — | — | — | — | — | 待测试 |
 
-> CTE RMSE 均值 **0.82 mm**，Max CTE 均值 **1.77 mm**。RegulatedPurePursuit 在 1.8m 水平直线上跟踪精度极高，相邻平行覆盖带间几乎不可能产生可见的漏割或重复清扫割缝。
+> 采样频率 1Hz。CTE 覆盖水平/竖直双向直线段，评估 PurePursuit 控制器在往复式覆盖路径中的综合跟踪精度。
 
 ---
 
@@ -358,3 +355,22 @@ $$e_{yaw} = |\operatorname{normalize}(\psi_{slam} - \psi_{goal})|$$
 10. **ROI 边距过大会混入环境障碍物** — ROI_MARGIN 必须紧贴目标障碍物（±0.15m），否则附近墙壁/物体将被纳入包络盒。
 11. **航点中途旋转导致重影** — 2026.05.03 test4 发现：在矩形路径航点间原地 270° 旋转会导致 RTAB-Map 产生多重叠影伪影，严重破坏建图质量。**中途禁止任何旋转**。
 12. **odom 累积误差与总旋转量正相关** — 实验#6 因起点多转了一圈，里程计误差累积使定位漂移，最终数据不可用。控制每次测试的总旋转量 ≤360°。
+
+## 四、覆盖率测试
+## 第一次测试
+问题与错误：
+终端1：
+[ekf_node-5] Failed to meet update rate! Took 0.011352473000000000078seconds. Try decreasing the rate, limiting sensor output frequency, or limiting the number of sensors.
+[component_container_isolated-17] [ERROR] [1778148479.652405145] [controller_server]: Exception in transformPose: Lookup would require extrapolation into the future.  Requested time 1778148473.232299 but the latest data is at time 1778148471.499123, when looking up transform from frame [odom] to frame [map]
+[rtabmap-14] [WARN] [1778148572.098544686] [rtabmap]: rtabmap: Did not receive data since 5 seconds! Make sure the input topics are published ("$ ros2 topic hz my_topic") and the timestamps in their header are set. If topics are coming from different computers, make sure the clocks of the computers are synchronized ("ntpdate"). If topics are not published at the same rate, you could increase "sync_queue_size" and/or "topic_queue_size" parameters (current=30 and 1 respectively).
+[rtabmap-14] rtabmap subscribed to (approx sync):
+[rtabmap-14]    /odom \
+[rtabmap-14]    /rgbd_image
+
+终端2：
+[INFO] [1778148609.328599069] [auto_coverage_test]:   [1025s] 褰撳墠瑕嗙洊鐜? 0.0% (coverage_evaluator)
+
+终端3：
+[path_coverage_node.py-1] [WARN] [1778148529.818684948] [path_coverage]: Navigation timed out!
+[path_coverage_node.py-1] [ERROR] [1778148963.291139211] [path_coverage]: Timed out waiting for goal to be accepted by the server.
+
