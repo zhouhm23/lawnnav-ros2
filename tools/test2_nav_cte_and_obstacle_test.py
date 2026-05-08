@@ -12,17 +12,19 @@ test2_nav_cte_and_obstacle_test.py — 导航控制与避障指标测试
 > 需要测另一条路径时，Ctrl+C 后重新启动脚本指定 --path。
 
 测试路径（map 坐标系，x⁺=车头，y⁺=左侧）:
-  CTE 直线段:
-    1→2: 起点 (0, 0) → 终点 (1.8, 0), 期望路径 y≡0, 1.8m 水平直线
-  避障对角线（穿过障碍物箱区域，箱中心 ~(1.2, -0.5)）:
+  CTE 闭合矩形:
+    1→2: 起点 (0, 0) → 终点 (1.8, 0),   期望 y≡0,   1.8m 水平
+    2→3: 起点 (1.8, 0) → 终点 (1.8, -1.0), 期望 x≡1.8, 1.0m 竖直
+    3→4: 起点 (1.8, -1.0) → 终点 (0, -1.0),  期望 y≡-1.0, 1.8m 水平
+    4→1: 起点 (0, -1.0) → 终点 (0, 0),     期望 x≡0,   1.0m 竖直
     1→3: 起点 (0, 0) → 终点 (1.8, -1.0)
     4→2: 起点 (0, -1.0) → 终点 (1.8, 0)
 
 指标:
   --mode cte:
-    - 横向误差 RMSE (CTE RMSE)
-    - 最大横向偏差 (Max CTE)
-    - 完整轨迹日志 trajectory_cte_<timestamp>.csv
+    - 沿闭合矩形 1→2→3→4→1 逐段导航，1Hz 采样轨迹
+    - 逐段 CTE RMSE / Max CTE + 整体汇总
+    - 轨迹日志 trajectory_cte_{label}_{timestamp}.csv
 
   --mode obstacle:
     - 碰撞次数：到达目标后人工终端输入 (0/1)
@@ -66,10 +68,17 @@ POSE_TOPIC_CANDIDATES = [
     "/localization_pose",
 ]
 
-# CTE 测试路径（map 坐标系）
-# 先到起点1，再沿直线到点2
-CTE_START = (0.0, 0.0, 0.0)                  # 点1: 起点
-CTE_GOAL  = (1.8, 0.0, -math.pi / 2.0)      # 点2: 终点
+# CTE 闭合矩形路径（map 坐标系，与 test1 GOALS_MAP 一致）
+# (label, goal_pose, axis, ref_value)
+# axis="y": 水平直线 y≡ref → e_cte = |p_y - ref|
+# axis="x": 竖直直线 x≡ref → e_cte = |p_x - ref|
+CTE_LOOP_SEGMENTS = [
+    ("1→2", (1.8,  0.0, -math.pi / 2.0), "y", 0.0),      # 水平 y≡0,   1.8m
+    ("2→3", (1.8, -1.0, -math.pi),       "x", 1.8),       # 竖直 x≡1.8, 1.0m
+    ("3→4", (0.0, -1.0,  math.pi / 2.0), "y", -1.0),      # 水平 y≡-1.0, 1.8m
+    ("4→1", (0.0,  0.0,  0.0),           "x", 0.0),       # 竖直 x≡0,   1.0m
+]
+CTE_START_POINT = (0.0, 0.0, 0.0)  # 点1，每 run 先导航到这里
 
 # 避障测试路径（map 坐标系）
 OBSTACLE_PATHS = [
@@ -208,57 +217,75 @@ class NavCteObstacleTest(Node):
     # ══════════════════════════════════════════════════════════════════════
 
     def _run_cte_test(self):
-        self.get_logger().info("========== CTE 直线跟踪测试开始 ==========")
+        self.get_logger().info("========== CTE 闭合矩形跟踪测试开始 ==========")
 
         # Step 1: 导航到点1（起点）
+        sx, sy, syaw = CTE_START_POINT
         self.get_logger().info(
-            f"--- 导航到起点 1 --- map: ({CTE_START[0]:.2f}, {CTE_START[1]:.2f}, "
-            f"{math.degrees(CTE_START[2]):.0f}°)")
-        ok = self._send_goal_and_wait(*CTE_START)
-        if not ok:
+            f"--- 导航到起点 1 --- map: ({sx:.2f}, {sy:.2f}, "
+            f"{math.degrees(syaw):.0f}°)")
+        if not self._send_goal_and_wait(sx, sy, syaw):
             self.get_logger().error("无法到达起点1，CTE 测试中止。")
             return
         self.get_logger().info("已到达起点1 ✓")
 
-        # Step 2: 导航 1→2 并 1Hz 采样轨迹
+        # Step 2: 逐段导航并采样轨迹
+        seg_results = []    # (label, traj, cte_list, rmse, max_cte, n, dur)
+        all_cte = []        # 所有段的 CTE 合并
+
+        for label, (gx, gy, gyaw), axis, ref_val in CTE_LOOP_SEGMENTS:
+            self.get_logger().info(
+                f"\n--- 段 {label}: 期望 {'y' if axis=='y' else 'x'}≡{ref_val} ---")
+
+            trajectory, duration_s = self._send_goal_and_log_trajectory(
+                gx, gy, gyaw, sample_rate_hz=CTE_SAMPLE_RATE_HZ
+            )
+            if trajectory is None:
+                self.get_logger().error(f"段 {label} 导航失败，CTE 测试中止。")
+                return
+
+            # ── 计算 CTE ────────────────────────────────────────────────
+            if axis == "y":
+                cte_values = [abs(py - ref_val) for (_, _, py, _) in trajectory]
+            else:  # axis == "x"
+                cte_values = [abs(px - ref_val) for (_, px, _, _) in trajectory]
+
+            K = len(cte_values)
+            rmse = math.sqrt(sum(e ** 2 for e in cte_values) / K) if K else 0.0
+            max_cte = max(cte_values) if cte_values else 0.0
+
+            seg_results.append((label, trajectory, cte_values, rmse, max_cte, K, duration_s))
+            all_cte.extend(cte_values)
+
+            self.get_logger().info(
+                f"  段 {label}: {K} 点, {duration_s:.1f}s, "
+                f"RMSE={rmse:.4f}m, Max={max_cte:.4f}m")
+
+            # 写入段轨迹 CSV
+            self._write_trajectory_csv(trajectory, cte_values, label)
+
+        # ── 整体汇总 ────────────────────────────────────────────────────
+        all_N = len(all_cte)
+        all_rmse = math.sqrt(sum(e ** 2 for e in all_cte) / all_N) if all_N else 0.0
+        all_max = max(all_cte) if all_cte else 0.0
+        total_dur = sum(r[6] for r in seg_results)
+
+        self.get_logger().info("\n" + "=" * 70)
+        self.get_logger().info("             闭合矩形 CTE 测试结果")
+        self.get_logger().info("=" * 70)
         self.get_logger().info(
-            f"--- 直线跟踪 1→2 --- 期望路径 y≡0, 1.8m ---")
-        self.get_logger().info(f"采样频率: {CTE_SAMPLE_RATE_HZ} Hz")
-
-        trajectory, duration_s = self._send_goal_and_log_trajectory(
-            *CTE_GOAL, sample_rate_hz=CTE_SAMPLE_RATE_HZ
-        )
-
-        if trajectory is None:
-            self.get_logger().error("1→2 导航失败，CTE 测试中止。")
-            return
-
-        # ── 计算 CTE ────────────────────────────────────────────────────
-        # 期望直线: y ≡ 0（从 CTE_START 到 CTE_GOAL 的水平线）
-        # 横向误差: e_cte = |y_i|
-        cte_values = [abs(py) for (_, px, py, _) in trajectory]
-        K = len(cte_values)
-
-        rmse = math.sqrt(sum(e ** 2 for e in cte_values) / K)
-        max_cte = max(cte_values)
-
-        self.get_logger().info("\n" + "=" * 60)
-        self.get_logger().info("           直线跟踪 CTE 结果")
-        self.get_logger().info("=" * 60)
+            f"  {'段':>6} {'点数':>5} {'耗时(s)':>8} {'RMSE(m)':>10} {'Max(m)':>10}")
+        self.get_logger().info("-" * 70)
+        for label, _, _, rmse, max_cte, K, dur in seg_results:
+            self.get_logger().info(
+                f"  {label:>6} {K:>5} {dur:>8.1f} {rmse:>10.4f} {max_cte:>10.4f}")
+        self.get_logger().info("-" * 70)
         self.get_logger().info(
-            f"  路径: 1→2  期望: y≡0  长度: 1.8m")
-        self.get_logger().info(
-            f"  轨迹点数: {K}  采样率: {CTE_SAMPLE_RATE_HZ} Hz  耗时: {duration_s:.1f}s")
-        self.get_logger().info("-" * 60)
-        self.get_logger().info(
-            f"  CTE RMSE:     {rmse:.4f} m")
-        self.get_logger().info(
-            f"  Max CTE:      {max_cte:.4f} m")
-        self.get_logger().info("=" * 60 + "\n")
+            f"  {'整体':>6} {all_N:>5} {total_dur:>8.1f} {all_rmse:>10.4f} {all_max:>10.4f}")
+        self.get_logger().info("=" * 70 + "\n")
 
-        # ── 写入 CSV ────────────────────────────────────────────────────
-        self._write_cte_csv(rmse, max_cte, K, duration_s)
-        self._write_trajectory_csv(trajectory, cte_values)
+        # ── 写入汇总 CSV ────────────────────────────────────────────────
+        self._write_cte_csv(seg_results, all_rmse, all_max, all_N, total_dur)
 
         self.get_logger().info("CTE 测试完成 ✓")
 
@@ -565,29 +592,31 @@ class NavCteObstacleTest(Node):
     # CTE CSV 输出
     # ══════════════════════════════════════════════════════════════════════
 
-    def _write_cte_csv(self, rmse, max_cte, n_points, duration_s):
-        """写入 CTE 汇总结果到 cte_results.csv（AppendingCSVLogger）。"""
+    def _write_cte_csv(self, seg_results, all_rmse, all_max, all_N, all_dur):
+        """写入 CTE 汇总结果到 cte_results.csv（AppendingCSVLogger）。
+
+        seg_results: [(label, traj, cte_list, rmse, max_cte, n, dur), ...] ×4 段
+        """
         headers = [
             "timestamp",
-            "path_label",
-            "n_points",
-            "duration_s",
-            "cte_rmse_m",
-            "cte_max_m",
+            # 逐段
+            "seg_1to2_rmse_m", "seg_1to2_max_m", "seg_1to2_n", "seg_1to2_dur_s",
+            "seg_2to3_rmse_m", "seg_2to3_max_m", "seg_2to3_n", "seg_2to3_dur_s",
+            "seg_3to4_rmse_m", "seg_3to4_max_m", "seg_3to4_n", "seg_3to4_dur_s",
+            "seg_4to1_rmse_m", "seg_4to1_max_m", "seg_4to1_n", "seg_4to1_dur_s",
+            # 整体
+            "overall_rmse_m", "overall_max_m", "overall_n", "overall_dur_s",
             "notes",
         ]
 
         logger = AppendingCSVLogger(CSV_CTE_PATH, headers)
 
-        row = [
-            f"{time.time():.3f}",
-            "1→2",
-            f"{n_points}",
-            f"{duration_s:.2f}",
-            f"{rmse:.4f}",
-            f"{max_cte:.4f}",
-            "",
-        ]
+        row = [f"{time.time():.3f}"]
+        # 逐段（按 label 顺序: 1→2, 2→3, 3→4, 4→1）
+        for _, _, _, rmse, max_cte, n, dur in seg_results:
+            row.extend([f"{rmse:.4f}", f"{max_cte:.4f}", f"{n}", f"{dur:.2f}"])
+        # 整体
+        row.extend([f"{all_rmse:.4f}", f"{all_max:.4f}", f"{all_N}", f"{all_dur:.2f}", ""])
 
         logger.add_row(row)
         logger.close()
@@ -595,11 +624,12 @@ class NavCteObstacleTest(Node):
         self.get_logger().info(
             f"CTE 结果已写入 {CSV_CTE_PATH} (run_id={logger.run_id})")
 
-    def _write_trajectory_csv(self, trajectory, cte_values):
-        """写入完整轨迹到 trajectory_cte_<timestamp>.csv（CSVLogger）。"""
+    def _write_trajectory_csv(self, trajectory, cte_values, segment_label: str = ""):
+        """写入完整轨迹到 trajectory_cte_{label}_{timestamp}.csv（CSVLogger）。"""
         headers = ["t_s", "x_m", "y_m", "yaw_rad", "cte_m"]
 
-        csv_logger = CSVLogger(TRAJECTORY_LOG_DIR, "trajectory_cte", headers)
+        safe_label = segment_label.replace("→", "_to_") if segment_label else "cte"
+        csv_logger = CSVLogger(TRAJECTORY_LOG_DIR, f"trajectory_cte_{safe_label}", headers)
         self.get_logger().info(f"轨迹日志 -> {csv_logger.filepath}")
 
         for (t_val, px, py, pyaw), cte in zip(trajectory, cte_values):

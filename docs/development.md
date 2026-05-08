@@ -23,10 +23,18 @@
 - **Commit 245d5a0**: 面向标准化测试进行系统级工程化升级，新增 `CoverageEvaluator` 模块（多边形圈选、网格化覆盖率计算、TF 坐标转换、实时覆盖率发布与 reset 服务），Nav2 增加 `static_layer`、调整膨胀半径与代价值衰减、限制 `allow_unknown`，RTAB-Map 启动支持 `localization/mapping` 模式切换与检测频率调优，覆盖规划新增 `polygon_expand`、`coverage_clearance`、执行阶段更严格代价阈值与静态图掩膜选项，新增离线分解预览脚本，引入毫米波雷达串口与帧处理模块，强化颜色叠加节点的 TF 健壮性、重发布与可视化参数。
 - **Commit 8f871ed**: 清理非源码产物，删除误提交的临时二进制文件 `core`。
 
+### 阶段四：外部真值覆盖评估 (2026.05)
+
+为解决 `coverage_evaluator` 依赖 SLAM 自测偏差的问题，引入基于俯视摄像 + ArUco 标记的外部真值评估系统：
+
+- **`tools/run_auto_coverage_test.py`**: 自动化覆盖测试脚本。支持 `--mode mapping`（矩形建图→自动发区域→覆盖）和 `--mode coverage`（直接覆盖）两种模式，自动向 `/clicked_point` 发布 1.8m×2.4m 区域四角，并行启动 `coverage_evaluator` 做 SLAM 对照。
+- **`coverage_evaluator/coverage_evaluator/camera_coverage.py`**: 离线视频分析核心模块。PS 蒙版 PNG → ArUco 单应矩阵 → 论文坐标网格 → 逐帧追踪车顶 ArUco → 累积覆盖计数，计算区域覆盖率、重复覆盖率、覆盖效率、覆盖率-时间曲线四项指标。
+- **`coverage_evaluator/scripts/run_camera_coverage.py`**: CLI 入口（`--video` + `--mask` + `--visualize`）。
+
 ## 仓库结构
 
 > 以下为 Git 追踪的顶层目录。`app/`、`bringup/`、`driver/`、`peripherals/`、`yolov5_ros2/` 等依赖包已被 `.gitignore` 排除，不纳入版本管理。
-
+ 
 ```
 src/
 ├── path_coverage_ros2/     # 【路径覆盖规划】Boustrophedon 分解 + 往复路径生成 + Nav2 导航执行

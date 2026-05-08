@@ -1,0 +1,32 @@
+# camera_coverage 离线视频分析参数
+camera_coverage:
+  # ── 论文坐标系区域 ──
+  paper_width: 1.8               # 区域宽 (m), x 方向
+  paper_height: 2.4              # 区域高 (m), y 方向
+
+  # ── 网格 ──
+  resolution: 0.005              # 网格分辨率 (m), 与 coverage_evaluator 一致
+  coverage_radius: 0.12          # 覆盖半径 (m), 小车有效作业宽度的一半
+
+  # ── ArUco 检测 ──
+  aruco_dict: "DICT_4X4_50"      # ArUco 字典
+  corner_ids: [0, 1, 2, 3]       # 四个角点 ArUco ID
+  robot_id: 4                    # 车顶 ArUco ID
+
+  # 角点论文坐标 (按 corner_ids 顺序)
+  corner_paper_xy:
+    - [0.0, 0.0]                 # ID=0: 左下
+    - [1.8, 0.0]                 # ID=1: 右下
+    - [1.8, 2.4]                 # ID=2: 右上
+    - [0.0, 2.4]                 # ID=3: 左上
+
+  # ── 视频 ──
+  video_fps: 0.0                 # 0 = 自动从视频元数据读取
+  frame_skip: 1                  # 处理帧间隔 (1=每帧)
+
+  # ── 时序 ──
+  time_series_interval: 30       # 时间曲线采样间隔 (帧)
+
+  # ── 鲁棒性 ──
+  max_lost_frames: 5             # 连续丢失帧数警告阈值
+  mask_threshold: 128            # 蒙版二值化阈值 (0-255)
