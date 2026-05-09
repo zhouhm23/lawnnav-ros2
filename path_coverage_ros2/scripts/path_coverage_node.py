@@ -739,10 +739,26 @@ class MapDrive(Node):
 			self.get_logger().info(
 				f"Execute cell {exec_idx}/{total_cells}, centroid=({next_cell['centroid'][0]:.2f}, {next_cell['centroid'][1]:.2f})"
 			)
-			try:
-				self.drive_polygon(next_cell["poly"])
-			except Exception as e:
-				self.get_logger().error(f"Cell {exec_idx} failed, skipping. error={e}")
+			cell_ok = False
+			for attempt in range(2):
+				try:
+					self.drive_polygon(next_cell["poly"])
+					cell_ok = True
+					break
+				except Exception as e:
+					if attempt == 0:
+						self.get_logger().warn(
+							f"Cell {exec_idx} attempt 1 failed: {e}. Waiting 3s before retry..."
+						)
+						time.sleep(3)
+					else:
+						self.get_logger().error(
+							f"Cell {exec_idx} failed after 2 attempts, skipping. error={e}"
+						)
+			if not cell_ok:
+				self.get_logger().warn(
+					f"Cell {exec_idx}/{total_cells} skipped, coverage may be incomplete."
+				)
 			exec_idx += 1
 		#self.get_logger().info("12: ") # -------------------------------------
 		self.get_logger().info("Boustrophedon Decomposition completed...")
@@ -913,6 +929,12 @@ class MapDrive(Node):
 			closest = pose
 		#	self.get_logger().info(f'plan...10 closest: {closest}')
 		self.get_logger().info("get_closest_possible_goal completed...") 
+		if closest is None:
+			self.get_logger().warn(
+				"get_closest_possible_goal: all planned path points blocked by costmap, "
+				"returning original goal as fallback."
+			)
+			return pos_next
 		return (closest.pose.position.x, closest.pose.position.y)
 
 
@@ -992,31 +1014,55 @@ class MapDrive(Node):
 			
 			if not rclpy.ok:
 				return
-			
 
-			self.get_logger().info("o_o 5: ") # -------------------------------------
-			pos_diff = np.array(pos_next)-np.array(pos_last)
+			try:
+				self.get_logger().info("o_o 5: ") # -------------------------------------
+				pos_diff = np.array(pos_next)-np.array(pos_last)
 
-			self.get_logger().info("o_o 6: ") # -------------------------------------
-			# angle from last to current position
-			angle = atan2(pos_diff[1], pos_diff[0])
+				self.get_logger().info("o_o 6: ") # -------------------------------------
+				# angle from last to current position
+				angle = atan2(pos_diff[1], pos_diff[0])
 
-			self.get_logger().info("o_o 7: ") # -------------------------------------
-			#'''
-			if abs(pos_diff[0]) < self.local_costmap_width/2.0 and abs(pos_diff[1]) < self.local_costmap_height/2.0:
-				# goal is visible in local costmap, check path is clear
-				self.get_logger().info("o_o 8: ") # -------------------------------------
-				tolerance = min(pos_diff[0], pos_diff[1])
-				closest = self.get_closest_possible_goal(pos_last, pos_next, angle, tolerance)
-				self.get_logger().info("o_o 9: ") # -------------------------------------
-				if closest is None:
-					continue
-				pos_next = closest
-			#'''  
+				self.get_logger().info("o_o 7: ") # -------------------------------------
+				#'''
+				if abs(pos_diff[0]) < self.local_costmap_width/2.0 and abs(pos_diff[1]) < self.local_costmap_height/2.0:
+					# goal is visible in local costmap, check path is clear
+					self.get_logger().info("o_o 8: ") # -------------------------------------
+					tolerance = min(pos_diff[0], pos_diff[1])
+					closest = self.get_closest_possible_goal(pos_last, pos_next, angle, tolerance)
+					self.get_logger().info("o_o 9: ") # -------------------------------------
+					if closest is None:
+						self.get_logger().warn("get_closest_possible_goal returned None, skipping waypoint.")
+						continue
+					pos_next = closest
+				#'''  
 
-			self.get_logger().info("o_o 10: ") # -------------------------------------
-			# 调用NavigateToPose动作来移动到目标点
-			self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+				self.get_logger().info("o_o 10: ") # -------------------------------------
+				# 调用NavigateToPose动作来移动到目标点，失败时重试一次
+				nav_ok = self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+				if not nav_ok:
+					self.get_logger().warn(
+						f"NavigateToPose failed to ({pos_next[0]:.2f}, {pos_next[1]:.2f}), "
+						"waiting 2s for costmap refresh, then retrying..."
+					)
+					time.sleep(2)
+					if not rclpy.ok:
+						return
+					self.get_logger().info("Retrying NavigateToPose...")
+					nav_ok = self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+					if not nav_ok:
+						self.get_logger().warn("Retry also failed, skipping waypoint and continuing.")
+						continue
+
+				# Brief pause to let local costmap refresh before next waypoint
+				time.sleep(0.5)
+
+			except Exception as e:
+				self.get_logger().error(
+					f"Waypoint ({pos_last[0]:.2f},{pos_last[1]:.2f}) -> "
+					f"({pos_next[0]:.2f},{pos_next[1]:.2f}) failed: {e}, skipping."
+				)
+				continue
 
 		self.get_logger().info("o_o 11: ")
 		if self.show_paths:

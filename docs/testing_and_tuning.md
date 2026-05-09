@@ -357,7 +357,7 @@ $$e_{yaw} = |\operatorname{normalize}(\psi_{slam} - \psi_{goal})|$$
 12. **odom 累积误差与总旋转量正相关** — 实验#6 因起点多转了一圈，里程计误差累积使定位漂移，最终数据不可用。控制每次测试的总旋转量 ≤360°。
 
 ## 四、覆盖率测试
-## 第一次测试
+### 第一次测试
 问题与错误：
 终端1：
 [ekf_node-5] Failed to meet update rate! Took 0.011352473000000000078seconds. Try decreasing the rate, limiting sensor output frequency, or limiting the number of sensors.
@@ -374,3 +374,82 @@ $$e_{yaw} = |\operatorname{normalize}(\psi_{slam} - \psi_{goal})|$$
 [path_coverage_node.py-1] [WARN] [1778148529.818684948] [path_coverage]: Navigation timed out!
 [path_coverage_node.py-1] [ERROR] [1778148963.291139211] [path_coverage]: Timed out waiting for goal to be accepted by the server.
 
+### 第二次测试：localization 模式地图无白色区域
+
+**现象**: 建图完成、切换 `localization:=true` 后重启，RViz 中 costmap 几乎全为障碍物（灰色/黑色），几乎无可通行白色区域，path_coverage 无路可走。
+
+**根因**: `rtabmap.db` 只存点云特征（用于 RTAB-Map 视觉定位），**不包含 Nav2 可用的栅格地图 (pgm+yaml)**。localization 模式下 RTAB-Map 只做定位，没有 map_server 发布 `/map` 话题 → Nav2 的 `static_layer` 没有数据 → costmap 只剩 obstacle_layer 的点云障碍物（墙壁），无白色自由空间 → path_coverage 无路可走。
+
+**修复方案** (2026.05.08):
+覆盖模式启动时，额外启动 `map_server` 播放之前保存的栅格地图:
+
+```bash
+ros2 run nav2_map_server map_server --ros-args -p yaml_filename:=<path>.yaml
+```
+
+launcher 的 `save` 命令同时保存 rtabmap.db + grid map (pgm+yaml)，`coverage` 命令自动启动 map_server。
+
+> **已废弃的错误方案**: 把 `/rtabmap/cloud_map` 改为 `/rtabmap/cloud_obstacles` — 这会导致建图阶段也丢失全部障碍物信息。
+
+### 第三次测试：
+
+1.
+[OK] 鍦板浘宸叉仮澶? test_map
+[INFO] 鍦板浘: test_map, 鍖哄煙: test_180x240.yaml
+[INFO] === 鍚姩绾畾浣嶈鐩栨ā寮?(localization:=true) ===
+[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
+[INFO] 鍚姩 navigation
+[INFO] 鍚姩 map_server 鍙戝竷鏍呮牸鍦板浘...
+[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
+[INFO] 鍚姩 map_server
+[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
+[INFO] 鍚姩 rviz
+[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
+[INFO] 鍚姩 path_coverage
+[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
+[INFO] 鍚姩 evaluator
+[INFO] 鍙戝竷瑕嗙洊鍖哄煙...
+鍙戝竷鍖哄煙 'test_180x240' (4 椤剁偣) 鍒?/clicked_point ...
+  椤剁偣 1: (0.000, 0.400)
+  椤剁偣 2: (2.400, 0.400)
+  椤剁偣 3: (2.400, -1.400)
+  椤剁偣 4: (0.000, -1.400)
+  闂悎 鈫?澶氳竟褰㈠簲宸插畬鎴?瀹屾垚 鉁?[OK] 瑕嗙洊妯″紡灏辩华 鈥?鍖哄煙宸插彂甯冿紝寮€濮嬭鐩栦綔涓?
+
+运行脚本没必要local_setup.sh，这个是编译后才需要的
+2.
+> mapping # 建图的时候，地图会突然出现小白点，然后膨胀成障碍物：我没有改任何导航代码，可能是相机有污渍
+> save test_map
+> coverage test_map test_180x240 # 明明我都启动mapping，结果还重新启动rviz，导致运行很慢；小车未开始覆盖，我看终端发现没启动path_coverage，而且栅格地图还是空白，不清楚为什么
+
+### 第四次测试
+
+**问题汇总**:
+
+1. **map_server 不工作** — lifecycle 节点需手动 `configure → activate`，仅 spawn 不够
+2. **grid map 保存为空** — `map_saver_cli` 默认订阅 `/map`，但 RTAB-Map 发布在 `/rtabmap/grid_map`，需 `-r /map:=/rtabmap/grid_map`
+3. **launcher 时序过紧** — RPi 上 ROS2 发现慢，path_coverage 等节点需更长等待时间
+
+**修复** (2026.05.09):
+
+1. map_server 启动后执行 `ros2 lifecycle set /map_server configure && activate`
+2. map_saver_cli 加重映射 `-r /map:=/rtabmap/grid_map`
+3. launcher 时序改为匹配用户手动流程的验证时间线：
+   - navigation → 2s → RViz → 5s → 等 30s → path_coverage + evaluator → 10s → 发布区域
+4. 新增 `live` 命令 — mapping 模式下直接覆盖（不切换 localization），规避重定位不可靠问题
+5. `path_coverage_params.yaml`: `drive_max_non_lethal` 和 `expand_max_non_lethal` 从 0 提升到 50，容忍 mapping 模式下的 inflation 灰色区域
+
+### 第五次测试
+这次测试中我5次启动覆盖时只有最后1次成功(live模式)，但车还是定位不准，有时候空的地方还是会变成黑色区域，有时候车还会碰到障碍物（膨胀层小）。而且最恶劣的是这次车在覆盖进度快一半时突然停止行走，rviz里显示突然红色边框消失，绿色路径消失。总之目前问题很多都是概率性的，我也不知道怎么办。建议去看logs/start_logs，不过不要直接读取完整文件（非常大），建议从最后的几行读起。问题的关键很可能在日志上。
+
+### 第六次测试
+第1次启动时点1到点2没连上，所以启动失败，怀疑是点1没发布成功；第二次成功启动，但可能由于我手动重定位不好，导致与障碍物碰撞，但还是完成全覆盖任务，且pc上运行视频分析测得
+```
+录制时长:     866.6 s
+总帧数:       22784
+有效轨迹点:   9148
+区域覆盖率:   90.4%
+重复覆盖率:   90.0%
+轨迹长度:     37.44 m
+```
+碰撞原因应该是重定位问题，因为我障碍物宽度和车宽差不多，重定位误差对碰撞的影响很大。可能需要实现自动重定位模式（起点任意），但也要保留刚成功的手动重定位模式（起点需手动放到map原点）。
