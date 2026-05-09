@@ -14,15 +14,20 @@ bash launcher/start.sh              # Shell 兼容包装
 > mapping                  ← 启动 SLAM 建图 + RViz，手动控车遍历区域
 
 > save test_map            ← 保存地图副本
+> load test_map            ← 切换地图
 > list                     ← 查看所有地图和区域
 
+> region my_area           ← 在 RViz 中 Publish Point 圈选新区域并保存
 > live test_180x240        ← ⭐ 建图模式下直接覆盖 (不切换定位，最稳定)
 > coverage test_map test_180x240  ← 纯定位覆盖 (需 localization 稳定时)
 
 > status                   ← 查看进程状态
-> load test_map            ← 切换地图
+> log [进程名]             ← 查看进程日志
+> stop                     ← 停止所有子进程
 > quit
 ```
+
+> **区域管理**: 内置了 `test_180x240` 区域。用 `region <名称>` 可在 RViz 中圈选新的覆盖区域，保存到 `~/.ros/regions/`。
 
 > **提示**: 旧版 `tools/start_path_coverage.sh` 仍可用，内部自动转发到新启动器。
 

@@ -29,8 +29,8 @@ path_coverage:
     polygon_expand: 0.05
 
     # 覆盖线距边界的内缩距离（米）。0.0 表示尽量贴边。
-    # 若现场更关注安全余量，可调到 0.01~0.03。
-    coverage_clearance: 0.0
+    # 第六次测试: 设为 0.03 提供 3cm 安全余量，防止定位漂移导致碰撞。
+    coverage_clearance: 0.03
 
     # 外扩圈（polygon_expand）可接受的最大代价值。
     # 设为 0 表示只允许白色自由区，避免扩张到灰色膨胀层。

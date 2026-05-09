@@ -307,15 +307,22 @@ class Launcher:
                     "ros2 launch path_coverage path_coverage.launch.py")
         self._spawn("evaluator",
                     "ros2 launch coverage_evaluator coverage_evaluator.launch.py")
-        # 等节点订阅建立
-        self._info("等待节点就绪 (10s)...")
-        time.sleep(10.0)
+
+        # 等节点启动 + DDS 发现 + 订阅建立
+        self._info("等待节点就绪 (15s)...")
+        time.sleep(15.0)
+
+        # 验证 path_coverage 仍在运行（未被 OOM 杀掉或启动崩溃）
+        if not self._is_running("path_coverage"):
+            self._warn("path_coverage 未运行！检查日志: log path_coverage")
+            return
+        self._info("path_coverage 运行中 ✓")
 
         self._info("发布覆盖区域...")
         pub_script = str(self.script_dir / "publish_region.py")
         rc = subprocess.run(
             ["python3", pub_script, "--file", region_file, "--wait", "3"],
-            timeout=20,
+            timeout=30,
         )
         if rc.returncode != 0:
             self._warn(f"区域发布失败 (exit={rc.returncode})")

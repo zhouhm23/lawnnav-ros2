@@ -50,6 +50,22 @@ def main():
                 automatically_declare_parameters_from_overrides=True)
     pub = node.create_publisher(PointStamped, "/clicked_point", 10)
 
+    # DDS 发现阶段：等待订阅者连接。
+    # 直接创建 publisher 后立即 publish 可能丢失第一条消息，
+    # 因为 DDS discovery 需要时间完成端点匹配。
+    print("  等待 DDS 订阅者发现 (3s)...")
+    for _ in range(30):
+        rclpy.spin_once(node, timeout_sec=0.1)
+        if pub.get_subscription_count() > 0:
+            print(f"  ✓ 检测到 {pub.get_subscription_count()} 个订阅者")
+            break
+    else:
+        print("  ⚠ 未检测到订阅者，继续发布（消息可能被缓冲）...")
+
+    # 额外等待 1s 确保订阅者缓冲区就绪
+    for _ in range(10):
+        rclpy.spin_once(node, timeout_sec=0.1)
+
     for i, (x, y) in enumerate(vertices):
         msg = PointStamped()
         msg.header.frame_id = frame_id
@@ -58,8 +74,8 @@ def main():
         msg.point.y = float(y)
         pub.publish(msg)
         print(f"  顶点 {i+1}: ({x:.3f}, {y:.3f})")
-        # 每点间隔 1s，确保 path_coverage 有足够时间处理
-        for _ in range(10):
+        # 每点间隔 1.5s，确保 path_coverage 处理完毕再发下一点
+        for _ in range(15):
             rclpy.spin_once(node, timeout_sec=0.1)
 
     # 闭合点
