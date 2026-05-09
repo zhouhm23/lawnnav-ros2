@@ -34,8 +34,10 @@ path_coverage:
 
     # 外扩圈（polygon_expand）可接受的最大代价值。
     # 设为 0 表示只允许白色自由区，避免扩张到灰色膨胀层。
-    expand_max_non_lethal: 0
+    # 调高到 50 以在 mapping 模式下容忍适度的 inflation。
+    expand_max_non_lethal: 50
 
     # 执行阶段可接受的最大代价值。
     # 设为 0 可尽量避免导航点落在灰色膨胀层。
-    drive_max_non_lethal: 0
+    # 调高到 50 以在 mapping 模式下容忍适度的 inflation。
+    drive_max_non_lethal: 50
