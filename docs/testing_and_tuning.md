@@ -457,3 +457,25 @@ launcher 的 `save` 命令同时保存 rtabmap.db + grid map (pgm+yaml)，`cover
 
 ### 第七次测试
 能完成覆盖，但车后面卡住了，我看rviz里显示车不动，但现实明明在动，一直不停，最后我手动停止了。而且过程中还是碰撞，我看点云和黑色区域不符，车歪了都不自动修正位置。
+
+**根因** (2026.05.09 事后分析):
+EKF 传感器融合链中，RTAB-Map 视觉 SLAM 的位姿修正完全没有回灌给 EKF：
+```
+odom0: odom_raw     ← 轮式里程计 (可靠)
+odom1: odom_rf2o    ← 激光里程计 (LD19 未连，死输入)
+imu0:  imu          ← IMU 航向 (部分补偿)
+```
+轮式里程计在无外部绝对参考时必然漂移 → EKF 累积漂移 → Nav2 costmap 与实际不一致 → 碰撞。
+
+**修复** (2026.05.09):
+在 `driver/controller/config/ekf.yaml` 新增 `pose0: rtabmap/localization_pose`，使用 `differential: true` 将 RTAB-Map 的绝对位姿变化量转为速度修正注入 EKF：
+```yaml
+pose0: rtabmap/localization_pose
+pose0_config: [true, true, false, false, false, true, ...]
+pose0_differential: true
+pose0_rejection_threshold: 3.0
+```
+原理：RTAB-Map 视觉特征匹配每秒检测位姿漂移 → EKF 将位姿差分转为速度修正 → 持续消除累积误差。不影响 world_frame 和 TF 树。
+⚠️ 注意: `driver/` 不在 git 版本控制中，此文件修改不会被 git 追踪。需备份或手动记录。
+
+现在要做对照的话就要想办法让二者共存，然后通过测试脚本分别进行实验

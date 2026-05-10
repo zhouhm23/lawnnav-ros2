@@ -31,6 +31,41 @@
 - **`coverage_evaluator/coverage_evaluator/camera_coverage.py`**: 离线视频分析核心模块。PS 蒙版 PNG → ArUco 单应矩阵 → 论文坐标网格 → 逐帧追踪车顶 ArUco → 累积覆盖计数，计算区域覆盖率、重复覆盖率、覆盖效率、覆盖率-时间曲线四项指标。
 - **`coverage_evaluator/scripts/run_camera_coverage.py`**: CLI 入口（`--video` + `--mask` + `--visualize`）。
 
+### 阶段五：系统稳定性与对照实验 (2026.05.08-05.09)
+
+经过七轮覆盖率测试，核心问题收敛为**定位漂移**和**进程崩溃**两类。本阶段完成了以下攻关：
+
+#### 5.1 交互式一键启动器 `launcher/start.py`
+- 统一交互式控制台，支持 `mapping`/`live`/`coverage`/`save`/`load`/`region` 命令
+- `live` 命令: mapping 模式下直接覆盖（不切换 localization，最稳定）
+- `publish_region.py`: 从区域 YAML 文件发布顶点到 `/clicked_point`，含 DDS 订阅者发现阶段
+- `region_capture.py`: 从 RViz Publish Point 捕获多边形并保存
+- `regions/test_180x240.yaml`: 内置 1.8m×2.4m 测试区域
+
+#### 5.2 path_coverage 鲁棒性增强
+- **参数调优**: `drive_max_non_lethal` 0→50, `expand_max_non_lethal` 0→50，容忍 mapping 模式下 costmap inflation 灰色区域；`coverage_clearance` 0→0.03（3cm 安全内缩）
+- **get_closest_possible_goal None 守卫**: `closest` 为 None 时 fallback 返回原始 goal，避免 `AttributeError` 崩溃
+- **waypoint 级 try/except 守卫**: 单 waypoint 异常跳过而非连坐整个 cell
+- **NavigateToPose 返回值检查 + 重试**: 失败后等 2s 让 costmap 刷新，重试一次
+- **waypoint 间 costmap 稳定等待**: 每次到达后等 0.5s 让局部 costmap 更新
+- **Cell 级重试**: 首次失败等 3s 重试一次
+
+#### 5.3 EKF 融合 RTAB-Map 视觉里程计
+- **问题**: EKF 只融合轮式里程计 + IMU，RTAB-Map 视觉 SLAM 的位姿修正未回灌，导致累积漂移
+- **修复**: `driver/controller/config/ekf.yaml` 新增 `pose0: rtabmap/localization_pose`，`differential: true` 将绝对位姿变化量转为速度修正注入 EKF（⚠ `driver/` 不在 git 追踪中）
+- 日志验证: `ros2 topic echo /rtabmap/localization_pose --once`
+
+#### 5.4 对照实验框架
+- **`path_coverage_node_baseline.py`**: 原始版 path_coverage（仅 NavigateToPose，无 retry/try-except/costmap_wait/None 守卫）
+- **`path_coverage_baseline_params.yaml`**: 原始参数 (drive=0, expand=0, clearance=0.0)
+- **`path_coverage_baseline.launch.py`**: 启动原始版节点
+- **`tools/test_coverage_comparison.py`**: 独立对照实验脚本（`--mode innovation|baseline|all`），自动管理进程启停与日志
+- **`tools/smoke_test.py`**: 快速冒烟测试（AST 语法检查，不需要 ROS 环境）
+
+#### 5.5 测试脚本适配
+- `tools/start_path_coverage.sh`: 标记 DEPRECATED，内部转发到 `launcher/start.sh`
+- `tools/run_auto_coverage_test.py`: 重写为手动建图+自动保存+覆盖模式
+
 ## 仓库结构
 
 > 以下为 Git 追踪的顶层目录。`app/`、`bringup/`、`driver/`、`peripherals/`、`yolov5_ros2/` 等依赖包已被 `.gitignore` 排除，不纳入版本管理。
