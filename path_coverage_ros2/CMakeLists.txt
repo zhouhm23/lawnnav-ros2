@@ -19,12 +19,14 @@ find_package(geometry_msgs REQUIRED)
 
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY scripts DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY params DESTINATION share/${PROJECT_NAME})
 
 # Install Python modules
 ament_python_install_package(${PROJECT_NAME})
 
 # Install Python executables     --- make sure to chmod +x XYZ.py
 install(PROGRAMS scripts/path_coverage_node.py DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/path_coverage_node_baseline.py DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

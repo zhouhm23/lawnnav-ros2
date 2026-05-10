@@ -18,16 +18,20 @@ bash launcher/start.sh              # Shell 兼容包装
 > list                     ← 查看所有地图和区域
 
 > region my_area           ← 在 RViz 中 Publish Point 圈选新区域并保存
-> live test_180x240        ← ⭐ 建图模式下直接覆盖 (不切换定位，最稳定)
-> coverage test_map test_180x240  ← 纯定位覆盖 (需 localization 稳定时)
+> coverage test_map test_180x240  ← ⭐ 纯定位覆盖 (推荐，经测试90.4%覆盖率)
+> live test_180x240        ← 建图模式下直接覆盖 (备选方案)
 
-> status                   ← 查看进程状态
 > log [进程名]             ← 查看进程日志
+> status                   ← 查看进程状态
 > stop                     ← 停止所有子进程
 > quit
 ```
 
 > **区域管理**: 内置了 `test_180x240` 区域。用 `region <名称>` 可在 RViz 中圈选新的覆盖区域，保存到 `~/.ros/regions/`。
+
+> **系统要求**: coverage/live 依赖 RTAB-Map 视觉 SLAM，EKF 已配置融合
+> `/rtabmap/localization_pose` 视觉里程计消除轮式漂移 (driver/controller/config/ekf.yaml)。
+> 对照组实验需 LD19 激光雷达已连接。
 
 > **提示**: 旧版 `tools/start_path_coverage.sh` 仍可用，内部自动转发到新启动器。
 
@@ -62,18 +66,16 @@ ros2 launch path_coverage path_coverage.launch.py
 ```
 
 #### 实验测试：
-**B. 标准化覆盖测试：**
 
-内置了 `test_180x240` 区域文件，无需手动圈选：
+**B. 创新组覆盖测试 (RTAB-Map + 改进 path_coverage)：**
 
 ```bash
 python3 launcher/start.py
-# 1. 在 launcher 中建图 (手动驾驶)
+# 1. 建图 (手动驾驶遍历区域)
 > mapping
-# 2. 保存为测试地图
+# 2. 保存地图
 > save test_map
-# 3. 此后每次测试直接一键执行
-> live test_180x240        ← ⭐ 建图模式下直接覆盖 (不切换定位，最稳定)
+# 3. 一键覆盖
 > coverage test_map test_180x240
 ```
 
@@ -83,7 +85,24 @@ python3 launcher/start.py
 ros2 launch coverage_evaluator coverage_evaluator.launch.py
 ```
 
-**D. 离线视频覆盖分析（源码在Windows上，车里的已经过时）：**
+**D. 对照实验 (创新组 vs 对照组)：**
+
+```bash
+# 前置: launcher 中 mapping → save test_map，对照组需接 LD19
+python3 tools/test_coverage_comparison.py --mode all       # 全部
+python3 tools/test_coverage_comparison.py --mode innovation  # 仅创新组
+python3 tools/test_coverage_comparison.py --mode baseline    # 仅对照组
+```
+对照组使用 LiDAR 静态地图 + 原始 path_coverage（无 retry/costmap_wait 等鲁棒性改进），
+两组使用同一地图和同一区域。日志输出到 `logs/comparison/`。
+
+**E. 快速冒烟测试：**
+
+```bash
+python3 tools/smoke_test.py   # <5s, 不需 ROS，检查所有修改文件语法
+```
+
+**F. 离线视频覆盖分析（源码在Windows上，车里的已经过时）：**
 
 见D:\python\Python\割草机导航\相机处理\README.md
 
