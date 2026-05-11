@@ -66,6 +66,41 @@
 - `tools/start_path_coverage.sh`: 标记 DEPRECATED，内部转发到 `launcher/start.sh`
 - `tools/run_auto_coverage_test.py`: 重写为手动建图+自动保存+覆盖模式
 
+### 阶段六：三组消融实验 + 系统鲁棒性闭环 (2026.05.10)
+
+经过八轮测试，核心问题收敛为两类：(1) baseline 存在崩溃 bug 导致对照实验无效，(2) 创新组存在概率性中途停止。本阶段完成三组消融实验设计和代码鲁棒性增强。
+
+#### 6.1 三组消融实验框架
+为论文整合性创新（视觉 SLAM + 改进算法）设计了标准消融实验：
+
+| 组 | 传感器 | path_coverage | 论证目的 |
+|:---|:---|:---|:---|
+| A | LiDAR | 原始 | 传统基线 |
+| B | RTAB-Map | 原始 | 证明仅换传感器不够（消融组） |
+| C | RTAB-Map | 改进 | 完整方案（创新组） |
+
+#### 6.2 Baseline 最小修复 (`path_coverage_node_baseline.py`)
+- `get_closest_possible_goal` 添加 `None` 守卫（修复 `'NoneType' object has no attribute 'pose'` 崩溃）
+- `drive_path` 单个 waypoint 添加 try/except 守卫
+- ⚠ 不添加 retry/costmap_wait/sleep 等鲁棒性改进，仅修复崩溃
+
+#### 6.3 创新版进程级守卫 (`path_coverage_node.py`)
+- **心跳定时器**: 每 15s 打印 `[HEARTBEAT] node alive, state=...`，便于诊断中途 hang
+- **进程级守卫**: `drive_path` 外层 try/except 捕获所有异常并记录完整 traceback
+- **Cell 自动恢复**: 失败后导航回 cell 质心（30s 超时），给定位系统恢复时间
+- **状态追踪**: `_coverage_start_time` + `_cover_state` 自动记录覆盖阶段
+
+#### 6.4 对照实验脚本重写 (`tools/test_coverage_comparison.py`)
+- 支持 `--mode a|b|c|all`
+- Group A 含 LD19 自动检测
+- Group B 新增（RTAB-Map + baseline path_coverage）
+- 共用 `_run_common()` 减少重复，日志按 group_a/b/c 前缀命名
+
+#### 6.5 对比报告生成器 (`tools/compare_results.py`)
+- 自动解析 evaluator 日志提取覆盖率
+- 统计 goal 成功/失败/跳过数
+- 生成 Markdown 对比表格 + 可选的 matplotlib 柱状图
+
 ## 仓库结构
 
 > 以下为 Git 追踪的顶层目录。`app/`、`bringup/`、`driver/`、`peripherals/`、`yolov5_ros2/` 等依赖包已被 `.gitignore` 排除，不纳入版本管理。

@@ -85,24 +85,26 @@ python3 launcher/start.py
 ros2 launch coverage_evaluator coverage_evaluator.launch.py
 ```
 
-**D. 对照实验 (创新组 vs 对照组)：**
+**D. 三组消融对照实验 (Group A/B/C)：**
 
 ```bash
-# 前置: launcher 中 mapping → save test_map，对照组需接 LD19
-python3 tools/test_coverage_comparison.py --mode all       # 全部
-python3 tools/test_coverage_comparison.py --mode innovation  # 仅创新组
-python3 tools/test_coverage_comparison.py --mode baseline    # 仅对照组
+# 前置: launcher 中 mapping → save test_map，Group A 需接 LD19
+python3 tools/test_coverage_comparison.py --mode a       # Group A: LiDAR + 原始
+python3 tools/test_coverage_comparison.py --mode b       # Group B: RTAB-Map + 原始 (消融)
+python3 tools/test_coverage_comparison.py --mode c       # Group C: RTAB-Map + 改进 (创新)
+python3 tools/test_coverage_comparison.py --mode all     # 全部三组依次运行
 ```
-对照组使用 LiDAR 静态地图 + 原始 path_coverage（无 retry/costmap_wait 等鲁棒性改进），
-两组使用同一地图和同一区域。日志输出到 `logs/comparison/`。
+三组对比论证：A vs B 证明仅换传感器不够，B vs C 证明算法改进是必要条件，A vs C 证明完整方案可达传统水平。
 
-**E. 快速冒烟测试：**
+**E. 自动生成对比报告：**
 
 ```bash
-python3 tools/smoke_test.py   # <5s, 不需 ROS，检查所有修改文件语法
+python3 tools/compare_results.py              # 终端输出 Markdown 报告
+python3 tools/compare_results.py --plot       # 同时生成柱状图
+python3 tools/compare_results.py -o report.md # 输出到文件
 ```
 
-**F. 离线视频覆盖分析（源码在Windows上，车里的已经过时）：**
+**F. 监控覆盖率（外置相机记录）：**
 
 见D:\python\Python\割草机导航\相机处理\README.md
 
