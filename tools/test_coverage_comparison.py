@@ -47,22 +47,6 @@ def _ensure_test_map():
     if os.path.exists(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm")): shutil.copy2(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm"), pd)
     _ok(f"地图已复制到 {SLAM_MAPS_DIR}"); return True
 
-def _restore_rtabmap_db() -> bool:
-    """恢复保存的 rtabmap.db — 与 launcher restore_map 行为一致。
-
-    localization:=true 模式必须使用建图时保存的数据库，
-    否则 RTAB-Map 无法正确定位。
-    """
-    src_db = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.db")
-    if not os.path.exists(src_db):
-        _warn(f"rtabmap.db 备份不存在: {src_db}")
-        _warn("请确保已在 launcher 中执行过 save test_map")
-        return False
-    dst_db = str(Path.home() / ".ros" / "rtabmap.db")
-    shutil.copy2(src_db, dst_db)
-    _ok(f"rtabmap.db 已恢复: {DEFAULT_MAP}.db → ~/.ros/rtabmap.db")
-    return True
-
 def _check_ld19():
     try:
         r = subprocess.run(["bash", "-lc", f"{_source_cmd()} && ros2 topic hz /scan --timeout 3 2>&1"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=8)
@@ -70,15 +54,13 @@ def _check_ld19():
     except: return False
 
 def _launch_mapserver(prefix):
-    """启动 map_server 并返回进程句柄（用于 cleanup）。"""
     gy = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.yaml")
-    if not os.path.exists(gy): _warn(f"地图不存在: {gy}"); return None
+    if not os.path.exists(gy): _warn(f"地图不存在: {gy}"); return
     _info("启动 map_server...")
-    ms = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && ros2 run nav2_map_server map_server --ros-args -p yaml_filename:={shlex.quote(gy)}"], stdout=open(os.path.join(LOG_DIR, f"{prefix}_mapserver.log"), "w"), stderr=subprocess.STDOUT)
-    time.sleep(5.0)
+    subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && ros2 run nav2_map_server map_server --ros-args -p yaml_filename:={shlex.quote(gy)}"], stdout=open(os.path.join(LOG_DIR, f"{prefix}_mapserver.log"), "w"), stderr=subprocess.STDOUT)
+    time.sleep(3.0)
     subprocess.run(f"{_source_cmd()} && ros2 lifecycle set /map_server configure && ros2 lifecycle set /map_server activate", shell=True, executable="/bin/bash", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
     _ok("map_server 已激活")
-    return ms
 
 def _cleanup(*ps):
     for p in ps:
@@ -88,53 +70,40 @@ def _cleanup(*ps):
         except: pass
 
 def _run_common(label, nav_cmd, rviz_cmd, pathcov_cmd, use_mapserver, costmap_wait):
-    """统一启动流程 — 时序与 launcher coverage 模式对齐，RPi 适配 x1.5。
-
-    时序: nav→3s→rviz→8s→mapserver→costmap_wait→pc+eval→23s→publish
-    """
     _stop_ros(); os.makedirs(LOG_DIR, exist_ok=True)
-    # RTAB-Map 模式：恢复保存的数据库（localization 定位必需）
-    if use_mapserver and not _restore_rtabmap_db():
-        _warn("无法恢复 rtabmap.db，定位可能失败！继续？"); input()
     nav = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {nav_cmd}"], stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_nav.log"), "w"), stderr=subprocess.STDOUT)
-    time.sleep(1.0)
-    rviz = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {rviz_cmd}"], stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_rviz.log"), "w"), stderr=subprocess.STDOUT)
     time.sleep(5.0)
-    ms = _launch_mapserver(PREFIX[label]) if use_mapserver else None
+    rviz = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {rviz_cmd}"], stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_rviz.log"), "w"), stderr=subprocess.STDOUT)
+    time.sleep(3.0)
+    if use_mapserver: _launch_mapserver(PREFIX[label])
     _info(f"等待 costmap 稳定 ({costmap_wait}s)..."); time.sleep(costmap_wait)
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {pathcov_cmd}"], stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_pathcoverage.log"), "w"), stderr=subprocess.STDOUT)
     ev = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && ros2 launch coverage_evaluator coverage_evaluator.launch.py"], stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_evaluator.log"), "w"), stderr=subprocess.STDOUT)
-    _info("等待节点就绪 + DDS 发现 (23s)..."); time.sleep(23.0)
-    # LD19 check for Group A — must be after nav has fully started
+    _info("等待节点就绪 (15s)..."); time.sleep(15.0)
+    # Quick LD19 check for Group A (after nav started)
     if label == "a" and not _check_ld19():
-        _warn("LD19 /scan 无数据！请确认雷达已连接。继续？"); input()
+        _warn("LD19 未检测到 /scan，覆盖可能失败！继续？"); input()
     pub = str(LAUNCHER_DIR / "publish_region.py")
-    rc = subprocess.run(["python3", pub, "--file", REGION_FILE, "--wait", "8"], timeout=30)
-    if rc.returncode != 0: _warn(f"区域发布失败"); _cleanup(pc, ev, rviz, nav, ms); return
-    _ok(f"{GROUP_LABEL[label]} 就绪 —— 观察 RViz 确认覆盖开始"); print()
+    rc = subprocess.run(["python3", pub, "--file", REGION_FILE, "--wait", "5"], timeout=30)
+    if rc.returncode != 0: _warn(f"区域发布失败"); _cleanup(pc, ev, rviz, nav); return
+    _ok(f"{GROUP_LABEL[label]} 就绪"); print()
     try: nav.wait()
     except KeyboardInterrupt: pass
-    finally: _cleanup(pc, ev, rviz, nav, ms)
+    finally: _cleanup(pc, ev, rviz, nav)
     _ok(f"{GROUP_LABEL[label]} 完成")
-
-def _prompt_origin(label: str) -> None:
-    input("车已放好？按 Enter 继续...")
 
 def run_group_a():
     print("\n\033[1;34m=== Group A: LiDAR + 原始算法 ===\033[0m\n")
     if not _ensure_test_map(): return
-    _prompt_origin("a")
-    _run_common("a", f"ros2 launch navigation navigation.launch.py map:={DEFAULT_MAP}", "ros2 launch navigation rviz_navigation.launch.py", "ros2 launch path_coverage path_coverage_baseline.launch.py", False, 30)
+    _run_common("a", f"ros2 launch navigation navigation.launch.py map:={DEFAULT_MAP}", "ros2 launch navigation rviz_navigation.launch.py", "ros2 launch path_coverage path_coverage_baseline.launch.py", False, 20)
 
 def run_group_b():
     print("\n\033[1;33m=== Group B: RTAB-Map + 原始算法 (消融) ===\033[0m\n")
-    _prompt_origin("b")
-    _run_common("b", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true", "ros2 launch navigation rviz_rtabmap_navigation.launch.py", "ros2 launch path_coverage path_coverage_baseline.launch.py", True, 45)
+    _run_common("b", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true", "ros2 launch navigation rviz_rtabmap_navigation.launch.py", "ros2 launch path_coverage path_coverage_baseline.launch.py", True, 30)
 
 def run_group_c():
     print("\n\033[1;32m=== Group C: RTAB-Map + 改进算法 (创新) ===\033[0m\n")
-    _prompt_origin("c")
-    _run_common("c", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true", "ros2 launch navigation rviz_rtabmap_navigation.launch.py", "ros2 launch path_coverage path_coverage.launch.py", True, 45)
+    _run_common("c", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true", "ros2 launch navigation rviz_rtabmap_navigation.launch.py", "ros2 launch path_coverage path_coverage.launch.py", True, 30)
 
 def main():
     p = argparse.ArgumentParser(description="三组消融对照实验")
@@ -143,8 +112,10 @@ def main():
     signal.signal(signal.SIGINT, lambda s,f: sys.exit(130))
     groups = ["a","b","c"] if args.mode == "all" else [args.mode]
     for g in groups:
-        if len(groups) > 1 and g != groups[0]:
-            print("\n" + "="*50 + "\n  组间切换：请将车手动推回地图原点...\n" + "="*50)
         {"a": run_group_a, "b": run_group_b, "c": run_group_c}[g]()
+        if len(groups) > 1 and g != groups[-1]:
+            print("\n" + "="*50 + "\n  请将车推回起点后按 Enter...\n" + "="*50)
+            try: input()
+            except KeyboardInterrupt: break
 
 if __name__ == "__main__": main()
