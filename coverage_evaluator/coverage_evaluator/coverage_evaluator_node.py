@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+import csv
 import math
+import os
+import time as time_mod
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -11,12 +14,15 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from geometry_msgs.msg import PointStamped
+from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import Float32
 from std_srvs.srv import Empty
 
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+
+from scipy.spatial.transform import Rotation
 
 
 @dataclass
@@ -86,6 +92,8 @@ class CoverageEvaluator(Node):
         self.declare_parameter('update_hz', 10.0)
         self.declare_parameter('publish_hz', 2.0)
         self.declare_parameter('log_period_sec', 1.0)
+        self.declare_parameter('trajectory_log_dir', '/home/ubuntu/ros2_ws/src/logs/')
+        self.declare_parameter('trajectory_log_enabled', True)
 
         self.clicked_point_topic = self.get_parameter('clicked_point_topic').get_parameter_value().string_value
         self.global_frame = self.get_parameter('global_frame').get_parameter_value().string_value
@@ -97,6 +105,8 @@ class CoverageEvaluator(Node):
         self.update_hz = float(self.get_parameter('update_hz').value)
         self.publish_hz = float(self.get_parameter('publish_hz').value)
         self.log_period_sec = float(self.get_parameter('log_period_sec').value)
+        self.trajectory_log_dir = self.get_parameter('trajectory_log_dir').get_parameter_value().string_value
+        self.trajectory_log_enabled = bool(self.get_parameter('trajectory_log_enabled').value)
 
         if self.resolution >= 0.01:
             self.get_logger().warn(
@@ -112,6 +122,14 @@ class CoverageEvaluator(Node):
         self._covered_mask: Optional[np.ndarray] = None
         self._total_inside: int = 0
         self._covered_inside: int = 0
+
+        # Trajectory log state
+        self._traj_csv_file: Optional[object] = None
+        self._traj_csv_writer: Optional[object] = None
+        self._traj_filename: str = ""
+
+        # Costmap cache
+        self._latest_costmap: Optional[OccupancyGrid] = None
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -130,6 +148,14 @@ class CoverageEvaluator(Node):
         self._pub_ratio = self.create_publisher(Float32, 'coverage_ratio', pub_qos)
 
         self._srv_reset = self.create_service(Empty, 'reset', self._on_reset)
+
+        # Subscribe to global costmap (cache latest for later saving)
+        self._sub_costmap = self.create_subscription(
+            OccupancyGrid,
+            '/global_costmap/costmap',
+            self._on_costmap,
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE),
+        )
 
         update_period = 1.0 / max(self.update_hz, 0.1)
         publish_period = 1.0 / max(self.publish_hz, 0.1)
@@ -163,6 +189,7 @@ class CoverageEvaluator(Node):
 
     def _on_reset(self, _req: Empty.Request, _res: Empty.Response) -> Empty.Response:
         self.get_logger().info('Reset requested; clearing polygon and coverage state.')
+        self._close_trajectory_log()
         self._clicked_points = []
         self._polygon_xy = None
         self._grid = None
@@ -171,6 +198,10 @@ class CoverageEvaluator(Node):
         self._total_inside = 0
         self._covered_inside = 0
         return _res
+
+    def _on_costmap(self, msg: OccupancyGrid) -> None:
+        """Cache the latest global costmap for saving when polygon is finalized."""
+        self._latest_costmap = msg
 
     def _on_clicked_point(self, msg: PointStamped) -> None:
         if msg.header.frame_id and msg.header.frame_id != self.global_frame:
@@ -260,12 +291,19 @@ class CoverageEvaluator(Node):
         self._total_inside = int(np.count_nonzero(inside))
         self._covered_inside = 0
 
+        # ── Open trajectory log CSV ──────────────────────────────────
+        self._open_trajectory_log()
+
+        # ── Save cached costmap ──────────────────────────────────────
+        self._save_costmap()
+
         self.get_logger().info(
             f"Polygon accepted (area={area:.3f} m^2). Grid={width}x{height} res={self.resolution}m. "
             f"Inside cells={self._total_inside}."
         )
 
-    def _lookup_robot_xy(self) -> Optional[Tuple[float, float]]:
+    def _lookup_robot_pose(self) -> Optional[Tuple[float, float, float]]:
+        """Look up robot pose (x, y, yaw) in global frame via TF."""
         try:
             tf = self._tf_buffer.lookup_transform(
                 self.global_frame,
@@ -277,18 +315,24 @@ class CoverageEvaluator(Node):
 
         x = float(tf.transform.translation.x)
         y = float(tf.transform.translation.y)
-        return x, y
+        q = tf.transform.rotation
+        r = Rotation.from_quat([q.x, q.y, q.z, q.w])
+        _, _, yaw = r.as_euler('xyz', degrees=False)
+        return x, y, yaw
 
     def _update_coverage(self) -> None:
         if self._grid is None or self._inside_mask is None or self._covered_mask is None:
             return
 
-        pose = self._lookup_robot_xy()
+        pose = self._lookup_robot_pose()
         if pose is None:
             return
 
-        rx, ry = pose
+        rx, ry, yaw = pose
         g = self._grid
+
+        # ── Write trajectory CSV ─────────────────────────────────────
+        self._write_trajectory_row(rx, ry, yaw)
 
         # Convert to grid indices
         cx = int((rx - g.origin_x) / g.resolution)
@@ -335,6 +379,71 @@ class CoverageEvaluator(Node):
             f"Coverage: {ratio * 100.0:.2f}% ({self._covered_inside}/{self._total_inside} cells)"
         )
 
+    # ── Trajectory + costmap logging ─────────────────────────────────
+
+    def _open_trajectory_log(self) -> None:
+        """Open a timestamped CSV file for trajectory logging."""
+        if not self.trajectory_log_enabled:
+            return
+        try:
+            os.makedirs(self.trajectory_log_dir, exist_ok=True)
+            ts = time_mod.strftime('%Y%m%d_%H%M%S')
+            self._traj_filename = os.path.join(
+                self.trajectory_log_dir, f'trajectory_{ts}.csv')
+            self._traj_csv_file = open(self._traj_filename, 'w', newline='')
+            self._traj_csv_writer = csv.writer(self._traj_csv_file)
+            self._traj_csv_writer.writerow(['t', 'x', 'y', 'yaw'])
+            self.get_logger().info(f'Trajectory log opened: {self._traj_filename}')
+        except Exception as e:
+            self.get_logger().warn(f'Failed to open trajectory log: {e}')
+
+    def _write_trajectory_row(self, x: float, y: float, yaw: float) -> None:
+        """Append one row to the trajectory CSV."""
+        if self._traj_csv_writer is None:
+            return
+        try:
+            t = self.get_clock().now().nanoseconds / 1e9
+            self._traj_csv_writer.writerow([f'{t:.6f}', f'{x:.6f}', f'{y:.6f}', f'{yaw:.6f}'])
+        except Exception:
+            pass  # Silently ignore write errors during coverage
+
+    def _close_trajectory_log(self) -> None:
+        """Close the trajectory CSV file if open."""
+        if self._traj_csv_file is not None:
+            try:
+                self._traj_csv_file.close()
+                self.get_logger().info(
+                    f'Trajectory log closed: {self._traj_filename}')
+            except Exception:
+                pass
+            self._traj_csv_file = None
+            self._traj_csv_writer = None
+
+    def _save_costmap(self) -> None:
+        """Save the cached global costmap as NPZ for offline plotting."""
+        if self._latest_costmap is None:
+            self.get_logger().warn('No costmap cached; skipping costmap save.')
+            return
+        try:
+            cm = self._latest_costmap
+            data = np.array(cm.data, dtype=np.int8).reshape(
+                cm.info.height, cm.info.width)
+            ts = time_mod.strftime('%Y%m%d_%H%M%S')
+            costmap_path = os.path.join(
+                self.trajectory_log_dir, f'costmap_{ts}.npz')
+            np.savez_compressed(
+                costmap_path,
+                data=data,
+                origin_x=cm.info.origin.position.x,
+                origin_y=cm.info.origin.position.y,
+                resolution=cm.info.resolution,
+                width=cm.info.width,
+                height=cm.info.height,
+            )
+            self.get_logger().info(f'Costmap saved: {costmap_path}')
+        except Exception as e:
+            self.get_logger().warn(f'Failed to save costmap: {e}')
+
 
 def main() -> None:
     rclpy.init()
@@ -344,6 +453,7 @@ def main() -> None:
     finally:
         try:
             node.log_final()
+            node._close_trajectory_log()
         except Exception:
             pass
         node.destroy_node()

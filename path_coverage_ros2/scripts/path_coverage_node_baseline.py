@@ -913,6 +913,12 @@ class MapDrive(Node):
 			closest = pose
 		#	self.get_logger().info(f'plan...10 closest: {closest}')
 		self.get_logger().info("get_closest_possible_goal completed...") 
+		if closest is None:
+			self.get_logger().warn(
+				"get_closest_possible_goal: all planned path points blocked by costmap, "
+				"returning original goal as fallback."
+			)
+			return pos_next
 		return (closest.pose.position.x, closest.pose.position.y)
 
 
@@ -1010,12 +1016,23 @@ class MapDrive(Node):
 				closest = self.get_closest_possible_goal(pos_last, pos_next, angle, tolerance)
 				self.get_logger().info("o_o 9: ") # -------------------------------------
 				if closest is None:
-					continue
+					self.get_logger().warn(
+						f"get_closest_possible_goal returned None for waypoint "
+						f"({pos_next[0]:.2f},{pos_next[1]:.2f}), using original."
+					)
+					closest = pos_next
 				pos_next = closest
 			#'''  
 
 			self.get_logger().info("o_o 10: ") # -------------------------------------
-			self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+			try:
+				self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+			except Exception as e:
+				self.get_logger().error(
+					f"Waypoint ({pos_last[0]:.2f},{pos_last[1]:.2f}) -> "
+					f"({pos_next[0]:.2f},{pos_next[1]:.2f}) failed: {e}, skipping."
+				)
+				continue
 
 		self.get_logger().info("o_o 11: ")
 		if self.show_paths:

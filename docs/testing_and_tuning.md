@@ -479,3 +479,53 @@ pose0_rejection_threshold: 3.0
 ⚠️ 注意: `driver/` 不在 git 版本控制中，此文件修改不会被 git 追踪。需备份或手动记录。
 
 现在要做对照的话就要想办法让二者共存，然后通过测试脚本分别进行实验
+
+### 第八次测试
+创新组完成完整覆盖任务，区域覆盖率86.7%为可接受数值，关键是无任何碰撞，说明定位精度提高。
+对照组正常启动导航和覆盖任务，但由于覆盖脚本缺陷导致中途停止，这说明对照组选择的路径覆盖包版本不对，不是能基本完成的版本。
+
+### 第九次改进 (2026.05.10)：三组消融实验设计 + 代码鲁棒性升级
+
+**背景**: test 8 中对照组因 `get_closest_possible_goal` 返回 None 导致 `'NoneType' object has no attribute 'pose'` 崩溃，全程覆盖率仅 17.4%，对照实验无法得出有效结论。同时创新组在 test 5/7 中偶发中途停止（红色边框消失/路径消失），需要进一步增强监控和恢复能力。
+
+**三组消融实验设计**:
+
+| 组 | 传感器 | 算法 | 目的 |
+|:---|:---|:---|:---|
+| **A** (传统基准) | LiDAR | 原始 path_coverage | 传统方案基线 |
+| **B** (消融组) | RTAB-Map 视觉 | 原始 path_coverage | 证明仅换传感器不够 |
+| **C** (创新组) | RTAB-Map 视觉 | 改进 path_coverage | 你的完整方案 |
+
+论证逻辑: A vs B（换传感器后崩溃）→ B vs C（加算法修复）→ A vs C（完整方案可达传统水平）。
+
+**代码改动**:
+
+1. **Baseline 修复** (`path_coverage_node_baseline.py`):
+   - `get_closest_possible_goal` 返回前添加 `None` 守卫（与创新版一致）
+   - `drive_path` 单个 waypoint 添加 try/except 守卫（失败跳过而非全崩溃）
+   - None 返回时添加 warn 日志（便于追踪差异）
+   - ⚠ 不添加 retry/costmap_wait/sleep(0.5) 等改进，精确量化算法贡献
+
+2. **创新版增强** (`path_coverage_node.py`):
+   - 添加 15s 心跳定时器 `_heartbeat_callback`（覆盖中打印 `[HEARTBEAT] node alive, state=...`）
+   - `drive_path` 外层包裹进程级 try/except（崩溃时打印完整 traceback）
+   - Cell 失败后自动恢复导航（回到 cell 质心，30s 超时，不阻塞）
+   - 覆盖开始/结束时自动追踪 `_coverage_start_time` + `_cover_state`
+
+3. **对照实验脚本重写** (`tools/test_coverage_comparison.py`):
+   - `--mode a|b|c|all` 支持三组分别或依次运行
+   - Group A 添加 LD19 自动检测（`ros2 topic hz /scan`）
+   - Group B 新增（RTAB-Map + baseline path_coverage）
+   - 共用 `_run_common()` 减少重复代码
+
+4. **新增对比报告生成器** (`tools/compare_results.py`):
+   - 自动解析各组 evaluator 日志提取覆盖率
+   - 解析 path_coverage 日志统计 goal 成功/失败/跳过数
+   - 生成 Markdown 对比表格
+   - `--plot` 生成柱状图（需 matplotlib）
+
+**测试**
+python3 tools/test_coverage_comparison.py --mode a
+1.提示雷达未连接，但实际已连接；
+2.rviz启动并能显示栅格地图、代价图和雷达点云，后台终端显示已发布区域点，但rviz并未见到
+3.车辆完全不动

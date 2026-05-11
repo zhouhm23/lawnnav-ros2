@@ -152,7 +152,23 @@ class MapDrive(Node):
 		self.get_logger().info('parameters::::global_frame::robot_width::costmap_max_non_lethal::boustrophedon_decomposition::border_drive::base_frame::num_points::min_wp_dist.')
 		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'::polygon_expand='+str(self.polygon_expand)+'::coverage_clearance='+str(self.coverage_clearance)+'::expand_max_non_lethal='+str(self.expand_max_non_lethal)+'::drive_max_non_lethal='+str(self.drive_max_non_lethal)+'::show_all_cells='+str(self.show_all_cells)+'::show_paths='+str(self.show_paths)+'::use_static_map_mask='+str(self.use_static_map_mask)+'::static_map_occupied_thresh='+str(self.static_map_occupied_thresh)+'.')
 		self.get_logger().info("Path coverage node initialized successfully...")
-	
+
+		# Heartbeat timer for process liveness monitoring (debug mid-run hangs)
+		self._heartbeat_timer = self.create_timer(15.0, self._heartbeat_callback)
+		self._coverage_start_time = None
+		self._cover_state = "idle"
+
+
+
+
+
+	def _heartbeat_callback(self):
+		"""Periodic liveness heartbeat for debugging mid-run hangs."""
+		if self._coverage_start_time is not None:
+			import time as _time
+			elapsed = _time.time() - self._coverage_start_time
+			self._cover_state = f"covering (elapsed={elapsed:.0f}s)"
+		self.get_logger().info(f"[HEARTBEAT] node alive, state={self._cover_state}")
 
 
 
@@ -739,6 +755,10 @@ class MapDrive(Node):
 			self.get_logger().info(
 				f"Execute cell {exec_idx}/{total_cells}, centroid=({next_cell['centroid'][0]:.2f}, {next_cell['centroid'][1]:.2f})"
 			)
+			if self._coverage_start_time is None:
+				import time as _time
+				self._coverage_start_time = _time.time()
+				self._cover_state = "covering"
 			cell_ok = False
 			for attempt in range(2):
 				try:
@@ -759,8 +779,24 @@ class MapDrive(Node):
 				self.get_logger().warn(
 					f"Cell {exec_idx}/{total_cells} skipped, coverage may be incomplete."
 				)
+				# Recovery: navigate to cell centroid to re-stabilize localization
+				try:
+					cx_next = next_cell.get("centroid", (0.0, 0.0))
+					self.get_logger().info(
+						f"Recovery: navigating to centroid ({cx_next[0]:.2f},{cx_next[1]:.2f}) "
+						"to re-stabilize..."
+					)
+					import time as _time
+					rec_ok = self.navigate_to_pose(cx_next[0], cx_next[1], 0.0)
+					if not rec_ok:
+						self.get_logger().warn("Recovery navigation cancelled or timed out.")
+					_time.sleep(2.0)
+				except Exception as rec_e:
+					self.get_logger().warn(f"Recovery navigation failed: {rec_e}")
 			exec_idx += 1
 		#self.get_logger().info("12: ") # -------------------------------------
+		self._coverage_start_time = None
+		self._cover_state = "idle"
 		self.get_logger().info("Boustrophedon Decomposition completed...")
 
 
@@ -986,6 +1022,15 @@ class MapDrive(Node):
 
 
 	def drive_path(self, path):
+		try:
+			self._drive_path_impl(path)
+		except Exception as e:
+			import traceback
+			self.get_logger().error(
+				f"drive_path crashed: {e}\\n{traceback.format_exc()}"
+			)
+
+	def _drive_path_impl(self, path):
 		self.get_logger().info("o_o 1: ") # -------------------------------------
 		if len(path) < 2:
 			self.get_logger().warn("drive_path got empty/short path, skip.")
