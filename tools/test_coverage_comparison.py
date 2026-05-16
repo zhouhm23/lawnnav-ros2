@@ -90,6 +90,21 @@ def _ensure_test_map():
     if os.path.exists(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm")): shutil.copy2(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm"), pd)
     _ok(f"地图已复制到 {SLAM_MAPS_DIR}"); return True
 
+def _restore_rtabmap_db() -> bool:
+    """恢复保存的 rtabmap.db — 与 launcher restore_map 行为一致。
+
+    localization:=true 模式必须使用建图时保存的数据库，
+    否则 RTAB-Map 无法正确定位。
+    """
+    src_db = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.db")
+    if not os.path.exists(src_db):
+        _warn(f"rtabmap.db 备份不存在: {src_db}")
+        _warn("请确保已在 launcher 中执行过 save test_map")
+        return False
+    dst_db = str(Path.home() / ".ros" / "rtabmap.db")
+    shutil.copy2(src_db, dst_db)
+    _ok(f"rtabmap.db 已恢复: {DEFAULT_MAP}.db → ~/.ros/rtabmap.db")
+
 def _check_ld19():
     try:
         r = subprocess.run(["bash", "-lc", f"{_source_cmd()} && ros2 topic hz /scan --timeout 3 2>&1"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=8)
@@ -122,6 +137,7 @@ def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait):
     time.sleep(10.0)
     if use_mapserver: _launch_mapserver(PREFIX[label])
     _info(f"等待 costmap 稳定 ({costmap_wait}s)..."); time.sleep(costmap_wait)
+    _restore_rtabmap_db();_info(f"rtabmap_db已恢复")
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {pathcov_cmd}"],
                            stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_pathcoverage.log"), "w"), stderr=subprocess.STDOUT,
                            preexec_fn=lambda: _preexec_fn("pathcov"), env=_ros_env())

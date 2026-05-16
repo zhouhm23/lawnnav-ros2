@@ -56,8 +56,7 @@ ros2 launch navigation rviz_rtabmap_navigation.launch.py
 ### 终端 3：按需运行
 
 > 修改 ROS2 包后需重新编译：`cd ros2_ws/ && colcon build --packages-select 包名 && source install/local_setup.sh`
-cd ros2_ws/ && colcon build --packages-select path_coverage && source install/local_setup.sh
-cd ros2_ws/ && colcon build --packages-select navigation && source install/local_setup.sh
+> cd ros2_ws/ && colcon build --packages-select navigation path_coverage && source install/local_setup.sh
 
 #### 正常作业：
 **A. 执行覆盖路径规划：**
