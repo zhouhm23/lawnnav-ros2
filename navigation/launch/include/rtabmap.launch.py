@@ -36,13 +36,14 @@ def launch_setup(context):
           'Grid/RangeMax':'10.0',
           'Grid/CellSize':'0.05',
           'Grid/MinGroundHeight':'-0.20',
-          'Grid/MaxGroundHeight':'0.50',
+          'Grid/MaxGroundHeight':'0.05',
           'Grid/MapFrameProjection':'true',
-          'Grid/MaxGroundAngle':'45',
+          'Grid/MaxGroundAngle':'15',
           'Grid/GroundIsObstacle':'false',
+          'Grid/NormalsSegmentation':'true',
           # Parameters that influence ground projection (may be ignored if node doesn't declare them)
-          'proj_max_ground_height':'0.20',
-          'proj_max_ground_angle':'45',
+          'proj_max_ground_height':'0.20',  # deprecated, overridden by Grid params
+          'proj_max_ground_angle':'15',
           'RGBD/ProximityBySpace':'true',
           'RGBD/ProximityPathMaxNeighbors':'5',
           'Optimizer/GravitySigma':'0', # Disable imu constraints (we are already in 2D)
@@ -67,6 +68,7 @@ def launch_setup(context):
             ('odom', '/odom'),
             ('imu', '/imu/data'),
             ('cloud_map', '/rtabmap/cloud_map'),
+            ('cloud_obstacles', '/rtabmap/cloud_obstacles'),
           ]
 
     # path to optional params file in navigation package
@@ -81,7 +83,8 @@ def launch_setup(context):
     
     rtabmap_parameters = [parameters, rtabmap_params_file, 
                           {'Mem/IncrementalMemory': 'false' if is_localization else 'true',
-                           'Mem/InitWMWithAllNodes': 'true' if is_localization else 'false'}]
+                           'Mem/InitWMWithAllNodes': 'true' if is_localization else 'false',
+                           'RGBD/StartAtOrigin': 'false'}]
     
     return [
         Node(

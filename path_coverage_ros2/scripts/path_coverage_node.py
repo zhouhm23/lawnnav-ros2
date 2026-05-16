@@ -73,6 +73,7 @@ class MapDrive(Node):
 
 		# 使用 sub_node 以便在回调中 spin
 		self.navigate_to_pose_client = ActionClient(self.sub_node, NavigateToPose, 'navigate_to_pose')
+		self.navigate_through_poses_client = ActionClient(self.sub_node, NavigateThroughPoses, 'navigate_through_poses')
 		self.compute_path_to_pose_client = ActionClient(self.sub_node, ComputePathToPose, 'compute_path_to_pose')
 		self.goal_msg = ComputePathToPose.Goal()
 		self.x = None
@@ -1021,6 +1022,75 @@ class MapDrive(Node):
 
 
 
+	# ── 路径密化 ──────────────────────────────────────────────────────
+
+	def _densify_path(self, path):
+		"""在长线段上均匀插入中间点，确保相邻点间距 ≤ min_wp_dist。
+
+		只在段长 > min_wp_dist * 2 时插入，过渡段（≈0.34m）自动跳过。
+		"""
+		if len(path) < 2:
+			return path
+		densified = [path[0]]
+		for i in range(len(path) - 1):
+			p1 = np.array(path[i])
+			p2 = np.array(path[i + 1])
+			seg = p2 - p1
+			seg_len = np.linalg.norm(seg)
+			if seg_len > self.min_wp_dist * 2:
+				n_extra = int(seg_len / self.min_wp_dist) - 1
+				for j in range(1, n_extra + 1):
+					alpha = j / (n_extra + 1)
+					intermediate = p1 + alpha * seg
+					densified.append(tuple(intermediate))
+			densified.append(tuple(p2))
+		return densified
+
+	def _group_by_direction(self, path):
+		"""按方向将路径点分组：同向连续段归为一组，转折点单独成组。
+
+		返回: [[(x, y, angle), ...], ...]
+		"""
+		if len(path) < 2:
+			return [[(path[0][0], path[0][1], 0.0)]] if path else []
+
+		groups = []
+		current_group = []
+		prev_angle = None
+
+		for i in range(len(path) - 1):
+			p1 = np.array(path[i])
+			p2 = np.array(path[i + 1])
+			seg = p2 - p1
+			angle = math.atan2(seg[1], seg[0])
+
+			if prev_angle is None:
+				current_group.append((float(path[i][0]), float(path[i][1]), angle))
+			else:
+				# 角度变化 ≥ 30° → 转折点，关闭当前组，当前点成为转折点
+				angle_diff = abs(math.atan2(math.sin(angle - prev_angle),
+				                           math.cos(angle - prev_angle)))
+				if angle_diff >= math.radians(30):
+					# 最后一个点也加到当前组，然后关闭
+					current_group.append((float(path[i][0]), float(path[i][1]), prev_angle))
+					groups.append(current_group)
+					current_group = []
+					# 转折点单独起组
+					current_group.append((float(path[i][0]), float(path[i][1]), angle))
+				else:
+					current_group.append((float(path[i][0]), float(path[i][1]), angle))
+
+			prev_angle = angle
+
+		# 最后一个点
+		if path:
+			last = path[-1]
+			current_group.append((float(last[0]), float(last[1]), prev_angle if prev_angle is not None else 0.0))
+		if current_group:
+			groups.append(current_group)
+
+		return groups
+
 	def drive_path(self, path):
 		try:
 			self._drive_path_impl(path)
@@ -1041,9 +1111,9 @@ class MapDrive(Node):
 		self.get_logger().info("o_o 2: ") # -------------------------------------
 
 		try:
-			initial_pos = self.tfBuffer.lookup_transform(self.global_frame, self.base_frame, rclpy.time.Time()) 
+			initial_pos = self.tfBuffer.lookup_transform(self.global_frame, self.base_frame, rclpy.time.Time())
 		except (TransformException, LookupException, ConnectivityException, ExtrapolationException) as ex:
-			pass 
+			pass
 
 		self.get_logger().info("o_o 3: ") # -------------------------------------
 		if self.x == None and self.y == None:
@@ -1051,63 +1121,58 @@ class MapDrive(Node):
 		else:
 			path.insert(0, (self.x, self.y))
 
-		self.get_logger().info("o_o -==----: ")
 		self.get_logger().info("o_o 4: "+ str(path)) # -------------------------------------
 
-		# 使用NavigateToPose动作客户端
-		for pos_last,pos_next in pairwise(path):
-			
+		# 密化：长线段插入中间点，强制全局规划器沿直线走
+		path = self._densify_path(path)
+
+		# 按方向分组：直行条带用 NavigateThroughPoses（无停车），转折点用 NavigateToPose
+		groups = self._group_by_direction(path)
+		self.get_logger().info(f"Path densified to {len(path)} points, grouped into {len(groups)} segments")
+
+		group_idx = 0
+		for group in groups:
 			if not rclpy.ok:
 				return
+			group_idx += 1
 
 			try:
-				self.get_logger().info("o_o 5: ") # -------------------------------------
-				pos_diff = np.array(pos_next)-np.array(pos_last)
-
-				self.get_logger().info("o_o 6: ") # -------------------------------------
-				# angle from last to current position
-				angle = atan2(pos_diff[1], pos_diff[0])
-
-				self.get_logger().info("o_o 7: ") # -------------------------------------
-				#'''
-				if abs(pos_diff[0]) < self.local_costmap_width/2.0 and abs(pos_diff[1]) < self.local_costmap_height/2.0:
-					# goal is visible in local costmap, check path is clear
-					self.get_logger().info("o_o 8: ") # -------------------------------------
-					tolerance = min(pos_diff[0], pos_diff[1])
-					closest = self.get_closest_possible_goal(pos_last, pos_next, angle, tolerance)
-					self.get_logger().info("o_o 9: ") # -------------------------------------
-					if closest is None:
-						self.get_logger().warn("get_closest_possible_goal returned None, skipping waypoint.")
-						continue
-					pos_next = closest
-				#'''  
-
-				self.get_logger().info("o_o 10: ") # -------------------------------------
-				# 调用NavigateToPose动作来移动到目标点，失败时重试一次
-				nav_ok = self.navigate_to_pose(pos_next[0], pos_next[1], angle)
-				if not nav_ok:
-					self.get_logger().warn(
-						f"NavigateToPose failed to ({pos_next[0]:.2f}, {pos_next[1]:.2f}), "
-						"waiting 2s for costmap refresh, then retrying..."
-					)
-					time.sleep(2)
-					if not rclpy.ok:
-						return
-					self.get_logger().info("Retrying NavigateToPose...")
-					nav_ok = self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+				if len(group) <= 1:
+					# 单点（转折/掉头）：NavigateToPose，精确控姿
+					x, y, angle = group[0]
+					self.get_logger().info(
+						f"Segment {group_idx}/{len(groups)}: turn @ ({x:.2f},{y:.2f})")
+					nav_ok = self.navigate_to_pose(x, y, angle)
 					if not nav_ok:
-						self.get_logger().warn("Retry also failed, skipping waypoint and continuing.")
-						continue
-
-				# Brief pause to let local costmap refresh before next waypoint
-				time.sleep(0.5)
-
+						self.get_logger().warn(
+							f"NavigateToPose failed to ({x:.2f},{y:.2f}), "
+							"waiting 2s for costmap refresh, then retrying...")
+						time.sleep(2)
+						if rclpy.ok:
+							nav_ok = self.navigate_to_pose(x, y, angle)
+							if not nav_ok:
+								self.get_logger().warn("Retry also failed, continuing.")
+				else:
+					# 多同向点（直行条带）：NavigateThroughPoses，平滑连续
+					self.get_logger().info(
+						f"Segment {group_idx}/{len(groups)}: straight {len(group)} pts "
+						f"({group[0][0]:.2f},{group[0][1]:.2f}) -> "
+						f"({group[-1][0]:.2f},{group[-1][1]:.2f})")
+					nav_ok = self.navigate_through_poses(group)
+					if not nav_ok:
+						self.get_logger().warn(
+							f"NavigateThroughPoses failed (segment {group_idx}), "
+							"falling back to point-by-point NavigateToPose...")
+						for x, y, angle in group:
+							if not rclpy.ok:
+								break
+							pt_ok = self.navigate_to_pose(x, y, angle)
+							if not pt_ok:
+								self.get_logger().warn(
+									f"Fallback waypoint ({x:.2f},{y:.2f}) failed, skipping.")
 			except Exception as e:
 				self.get_logger().error(
-					f"Waypoint ({pos_last[0]:.2f},{pos_last[1]:.2f}) -> "
-					f"({pos_next[0]:.2f},{pos_next[1]:.2f}) failed: {e}, skipping."
-				)
-				continue
+					f"Segment {group_idx} failed: {e}, skipping.")
 
 		self.get_logger().info("o_o 11: ")
 		if self.show_paths:
@@ -1185,6 +1250,80 @@ class MapDrive(Node):
 
 
 
+
+	# ── NavigateThroughPoses ──────────────────────────────────────────
+
+	def navigate_through_poses(self, poses):
+		"""一次性发送同向路径点列表，机器人平滑穿行不中间停车。
+
+		poses: [(x, y, angle), ...]
+		返回 True/False。
+		"""
+		if not poses:
+			return False
+
+		self.get_logger().info('Waiting for NavigateThroughPoses action server...')
+		if not self.navigate_through_poses_client.wait_for_server(timeout_sec=5.0):
+			self.get_logger().error('NavigateThroughPoses action server not available!')
+			return False
+
+		goal_msg = NavigateThroughPoses.Goal()
+		for (x, y, angle) in poses:
+			angle_quat = self.euler_to_quaternion(angle, 0, 0)
+			ps = PoseStamped()
+			ps.header.frame_id = self.global_frame
+			ps.header.stamp = self.get_clock().now().to_msg()
+			ps.pose.position.x = x
+			ps.pose.position.y = y
+			ps.pose.position.z = 0.0
+			ps.pose.orientation.x = angle_quat[0]
+			ps.pose.orientation.y = angle_quat[1]
+			ps.pose.orientation.z = angle_quat[2]
+			ps.pose.orientation.w = angle_quat[3]
+			goal_msg.poses.append(ps)
+
+		self.get_logger().info(
+			f'Sending NavigateThroughPoses: {len(poses)} poses')
+
+		send_goal_future = self.navigate_through_poses_client.send_goal_async(goal_msg)
+		try:
+			rclpy.spin_until_future_complete(self.sub_node, send_goal_future, timeout_sec=10.0)
+			goal_handle = send_goal_future.result()
+		except Exception as e:
+			self.get_logger().error(f"NavigateThroughPoses send_goal exception: {e}")
+			return False
+
+		if goal_handle is None:
+			self.get_logger().error('NavigateThroughPoses goal not accepted (timeout).')
+			return False
+		if not goal_handle.accepted:
+			self.get_logger().error('NavigateThroughPoses goal rejected by server.')
+			return False
+
+		# 超时 = 60s 基础 + 每点 2s
+		timeout = max(60, len(poses) * 2)
+		self.get_logger().info(f'NavigateThroughPoses accepted, waiting (timeout={timeout}s)...')
+		result_future = goal_handle.get_result_async()
+		try:
+			rclpy.spin_until_future_complete(self.sub_node, result_future, timeout_sec=timeout)
+			result = result_future.result()
+		except Exception as e:
+			self.get_logger().error(f"NavigateThroughPoses result exception: {e}")
+			goal_handle.cancel_goal_async()
+			return False
+
+		if result is None:
+			self.get_logger().warn("NavigateThroughPoses timed out!")
+			goal_handle.cancel_goal_async()
+			return False
+
+		status = result.status
+		if status == GoalStatus.STATUS_SUCCEEDED:
+			self.get_logger().info('NavigateThroughPoses succeeded!')
+			return True
+		else:
+			self.get_logger().warn(f'NavigateThroughPoses failed with status: {status}')
+			return False
 
 	def add_more_waypoints(self, x1, y1, x2, y2, angle_quat):
 		# Calculate the midpoint

@@ -94,7 +94,7 @@
 
       # If you have high-frequency data or are running with a low frequency parameter value, then you may want to increase
       # the size of the subscription queue so that more measurements are fused.
-      odom0_queue_size: 1
+      odom0_queue_size: 10
 
       # [ADVANCED] When measuring one pose variable with two sensors, a situation can arise in which both sensors under-
       # report their covariances. This can lead to the filter rapidly jumping back and forth between each measurement as they
@@ -174,20 +174,17 @@
       #imu0_twist_rejection_threshold: 0.8                #
       #imu0_linear_acceleration_rejection_threshold: 0.8  #
 
-      # ── RTAB-Map 视觉里程计反馈 (2026.05.09) ──────────────────
-      # RTAB-Map 每秒数百次特征匹配计算的绝对位姿变化 → 转为速度
-      # 修正量注入 EKF，持续消除轮式里程计漂移。
-      # differential=true: 位姿差分→速度，不改变 world_frame(odom)。
-      # 对照组 (baseline cmd) 不使用 RTAB-Map，此输入自动静默无数据。
-      pose0: rtabmap/localization_pose
-      pose0_config: [true,  true,  false,
-                     false, false, true,
-                     false, false, false,
-                     false, false, false,
-                     false, false, false]
-      pose0_differential: true
-      pose0_queue_size: 5
-      pose0_rejection_threshold: 3.0
+      # ── RTAB-Map 视觉里程计反馈 (暂时禁用: 视觉噪声大 → 污染 EKF) ──
+      # 待相机/照明改善后可重新启用。
+      #pose0: rtabmap/localization_pose
+      #pose0_config: [true,  true,  false,
+      #               false, false, false,
+      #               false, false, false,
+      #               false, false, false,
+      #               false, false, false]
+      #pose0_differential: true
+      #pose0_queue_size: 5
+      #pose0_rejection_threshold: 5.0
 
       # [ADVANCED] Some IMUs automatically remove acceleration due to gravity, and others don't. If yours doesn't, please set
       # this to true, and *make sure* your data conforms to REP-103, specifically, that the data is in ENU frame.
