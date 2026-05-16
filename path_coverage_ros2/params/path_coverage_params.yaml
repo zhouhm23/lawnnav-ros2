@@ -29,7 +29,7 @@ path_coverage:
     polygon_expand: 0.05
 
     # 覆盖线距边界的内缩距离（米）。必须 ≥ robot_radius(0.15)，否则 waypoint 落入致命区。
-    coverage_clearance: 0.15
+    coverage_clearance: 0.11
 
     # 外扩圈（polygon_expand）可接受的最大代价值。
     # 设为 0 表示只允许白色自由区，避免扩张到灰色膨胀层。
