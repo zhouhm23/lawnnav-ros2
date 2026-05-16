@@ -28,9 +28,8 @@ path_coverage:
     # 在周边无障碍时适度外扩，提升边界覆盖连续性。
     polygon_expand: 0.05
 
-    # 覆盖线距边界的内缩距离（米）。0.0 表示尽量贴边。
-    # 第六次测试: 设为 0.03 提供 3cm 安全余量，防止定位漂移导致碰撞。
-    coverage_clearance: 0.03
+    # 覆盖线距边界的内缩距离（米）。必须 ≥ robot_radius(0.15)，否则 waypoint 落入致命区。
+    coverage_clearance: 0.15
 
     # 外扩圈（polygon_expand）可接受的最大代价值。
     # 设为 0 表示只允许白色自由区，避免扩张到灰色膨胀层。
@@ -38,6 +37,5 @@ path_coverage:
     expand_max_non_lethal: 50
 
     # 执行阶段可接受的最大代价值。
-    # 设为 0 可尽量避免导航点落在灰色膨胀层。
-    # 调高到 50 以在 mapping 模式下容忍适度的 inflation。
-    drive_max_non_lethal: 50
+    # 调高到 80 允许在膨胀层（0.15~0.20m 灰色带）内规划。
+    drive_max_non_lethal: 80

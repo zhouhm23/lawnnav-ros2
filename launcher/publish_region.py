@@ -62,9 +62,13 @@ def main():
     else:
         print("  ⚠ 未检测到订阅者，继续发布（消息可能被缓冲）...")
 
-    # 额外等待 1s 确保订阅者缓冲区就绪
-    for _ in range(10):
+    # 额外等待 2s 确保订阅者回调注册就绪（避免首点丢失）
+    print("  等待订阅者就绪 (2s)...")
+    for _ in range(20):
         rclpy.spin_once(node, timeout_sec=0.1)
+
+    # 第一个点前额外 0.5s 间隔，确保 path_coverage 回调完全就绪
+    time.sleep(0.5)
 
     for i, (x, y) in enumerate(vertices):
         msg = PointStamped()

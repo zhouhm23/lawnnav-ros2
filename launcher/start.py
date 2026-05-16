@@ -23,6 +23,7 @@ start.py — 割草机器人系统一键启动器（交互式）。
 import argparse
 import os
 import re
+import resource
 import shlex
 import shutil
 import signal
@@ -38,6 +39,15 @@ MAP_BACKUP_DIR = str(Path.home() / ".ros" / "maps")
 REGION_DIR = str(Path.home() / ".ros" / "regions")
 RTABMAP_DB = str(Path.home() / ".ros" / "rtabmap.db")
 LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/start_logs"
+
+# 各子进程内存上限 (bytes)，总计≤4GB（总8GB，待机占用3.5GB）
+MEMORY_LIMITS = {
+    "navigation":   2.0 * 1024**3,   # RTAB-Map + Nav2（内存大户）
+    "rviz":         0.6 * 1024**3,   # RViz 可视化
+    "path_coverage":0.5 * 1024**3,   # Python 覆盖节点
+    "evaluator":    0.4 * 1024**3,   # Python 评估节点
+    "map_server":   0.3 * 1024**3,   # 栅格地图服务
+}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Process manager
@@ -115,11 +125,26 @@ class Launcher:
         full_cmd = f'{self._source_cmd()} && {command}'
         self._info(f'启动 {name}' if not self.debug else f'启动 {name}: {command}')
 
+        # 内存限制（best-effort，子进程 VM 超限时静默跳过）
+        mem_limit = MEMORY_LIMITS.get(name)
+        def _preexec():
+            if mem_limit:
+                try:
+                    resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
+                except Exception:
+                    pass
+
+        # 日志静默：只保留 ERROR/FATAL，降低磁盘 IO
+        env = os.environ.copy()
+        env['RCUTILS_LOGGING_SEVERITY_THRESHOLD'] = 'ERROR'
+        env['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}] {message}'
+
         if self.debug:
             proc = subprocess.Popen(
                 ['bash', '-lc', full_cmd],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, bufsize=1,
+                preexec_fn=_preexec, env=env,
             )
             threading.Thread(target=self._show_output, args=(proc.stdout, name),
                              daemon=True).start()
@@ -132,6 +157,7 @@ class Launcher:
             proc = subprocess.Popen(
                 ['bash', '-lc', full_cmd],
                 stdout=fh, stderr=fh, text=True,
+                preexec_fn=_preexec, env=env,
             )
             threading.Thread(target=self._check_startup,
                              args=(name, proc), daemon=True).start()
@@ -143,7 +169,10 @@ class Launcher:
         time.sleep(2.0)
         rc = proc.poll()
         if rc is not None:
-            self._warn(f'{name} 启动后立即退出 (exit={rc})，查看: log {name}')
+            if rc == -11:
+                self._warn(f'{name} 内存超限被系统终止 (SIGSEGV)，退出码={rc}')
+            else:
+                self._warn(f'{name} 启动后立即退出 (exit={rc})，查看: log {name}')
 
     def _kill(self, name: str) -> None:
         mp = self._procs.pop(name, None)
@@ -155,6 +184,10 @@ class Launcher:
                 mp.proc.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
                 mp.proc.kill()
+                try:
+                    mp.proc.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    pass
             self._info(f'已停止 {name}')
         else:
             self._info(f'{name} 已退出')
@@ -162,6 +195,8 @@ class Launcher:
     def _kill_all(self) -> None:
         for name in list(self._procs.keys()):
             self._kill(name)
+        self._run_stop_ros()
+        self._current_mode = "none"
 
     def _is_running(self, name: str) -> bool:
         mp = self._procs.get(name)
@@ -170,12 +205,33 @@ class Launcher:
     # ── 阶段操作 ──────────────────────────────────────────────────────
 
     def _run_stop_ros(self) -> None:
+        """停止所有 ROS 进程：先归零速度，再执行系统级清理。"""
+        # 1. 速度归零，防止机器人继续运动
+        try:
+            subprocess.run(
+                f'{self._source_cmd()} && '
+                f'ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist '
+                f'"{{linear: {{x: 0.0, y: 0.0, z: 0.0}}, angular: {{x: 0.0, y: 0.0, z: 0.0}}}}"',
+                shell=True, executable='/bin/bash',
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
+        except Exception:
+            pass  # 速度归零失败不阻塞
+
+        # 2. sudo 执行系统级 stop 脚本（需要无密码 sudo 权限）
         stop_script = Path.home() / '.stop_ros.sh'
         if stop_script.exists():
-            self._info('执行 ~/.stop_ros.sh ...')
-            subprocess.call(['bash', str(stop_script)],
+            self._info('执行 sudo ~/.stop_ros.sh ...')
+            subprocess.call(['sudo', 'bash', str(stop_script)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(1.0)
+            time.sleep(1.5)
+        else:
+            # 兜底：直接 killall ros2 进程
+            self._info('~/.stop_ros.sh 不存在，执行 killall 兜底...')
+            subprocess.call(['pkill', '-f', 'ros2'],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1.5)
 
     def _cleanup_db(self) -> None:
         db = Path('/home/ubuntu/.ros/rtabmap.db')
@@ -283,10 +339,7 @@ class Launcher:
         """保存当前地图 + 清理 navigation 进程（保留 rviz）。"""
         if self._current_mode == "mapping":
             self._save_map_auto()
-        for name in list(self._procs.keys()):
-            if name != "rviz":
-                self._kill(name)
-        self._run_stop_ros()
+        self._kill_all()
         if map_name:
             self.restore_map(map_name)
         elif not os.path.exists(RTABMAP_DB):
@@ -321,7 +374,7 @@ class Launcher:
         self._info("发布覆盖区域...")
         pub_script = str(self.script_dir / "publish_region.py")
         rc = subprocess.run(
-            ["python3", pub_script, "--file", region_file, "--wait", "3"],
+            ["python3", pub_script, "--file", region_file, "--wait", "8"],
             timeout=30,
         )
         if rc.returncode != 0:
@@ -512,7 +565,7 @@ class Launcher:
             if not files:
                 print("  无日志文件")
                 return
-            print(f"\n 日志文件 (/tmp/start_logs/):")
+            print(f"\n 日志文件 ({LOG_DIR}/):")
             for f in files:
                 path = os.path.join(LOG_DIR, f)
                 sz = os.path.getsize(path)
@@ -550,7 +603,7 @@ class Launcher:
             self._info("收到中断信号")
         finally:
             self._kill_all()
-            self._info("已退出")
+            self._info("已退出，所有服务已停止")
 
     def _interactive_loop(self) -> None:
         while self._running:
@@ -598,7 +651,6 @@ class Launcher:
                 self.print_status()
             elif cmd == "stop":
                 self._kill_all()
-                self._current_mode = "none"
                 self._info("所有进程已停止")
             elif cmd in ("h", "help", "?"):
                 self._print_help()
