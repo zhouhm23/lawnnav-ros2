@@ -168,7 +168,17 @@ def run_group_b():
 
 def run_group_c():
     print("\n\033[1;32m=== Group C: RTAB-Map + 改进算法 (创新) ===\033[0m\n")
-    _run_common("c", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true",  "ros2 launch path_coverage path_coverage.launch.py", True, 5)
+    _stop_ros(); os.makedirs(LOG_DIR, exist_ok=True)
+    if not _ensure_test_map(): return
+    start_py = str(LAUNCHER_DIR / "start.py")
+    _info(f"调用 launcher: {start_py} --non-interactive coverage {DEFAULT_MAP} test_180x240")
+    rc = subprocess.run(
+        ["python3", start_py, "--non-interactive", "coverage", DEFAULT_MAP, "test_180x240"],
+        timeout=3600,  # 1 hour max
+    )
+    if rc.returncode != 0:
+        _warn(f"start.py 退出码={rc.returncode}")
+    _ok(f"{GROUP_LABEL['c']} 完成")
 
 def main():
     p = argparse.ArgumentParser(description="三组消融对照实验")

@@ -48,6 +48,11 @@ from nav2_msgs.action import NavigateThroughPoses, NavigateToPose, ComputePathTo
 from geometry_msgs.msg import PointStamped, PoseStamped, Twist
 from action_msgs.msg import GoalStatus
 
+from path_coverage.checkpoint import (
+    save_checkpoint, load_checkpoint, clear_checkpoint,
+    register_signal_handlers, CHECKPOINT_FILE,
+)
+
 
 
 
@@ -151,6 +156,16 @@ class MapDrive(Node):
 
 		self.get_logger().info('parameters::::global_frame::robot_width::costmap_max_non_lethal::boustrophedon_decomposition::border_drive::base_frame::num_points::min_wp_dist.')
 		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'::polygon_expand='+str(self.polygon_expand)+'::coverage_clearance='+str(self.coverage_clearance)+'::expand_max_non_lethal='+str(self.expand_max_non_lethal)+'::drive_max_non_lethal='+str(self.drive_max_non_lethal)+'::show_all_cells='+str(self.show_all_cells)+'::show_paths='+str(self.show_paths)+'::use_static_map_mask='+str(self.use_static_map_mask)+'::static_map_occupied_thresh='+str(self.static_map_occupied_thresh)+'.')
+
+		# Checkpoint: register signal handlers for crash recovery
+		register_signal_handlers()
+		self._checkpoint_data = load_checkpoint()
+		if self._checkpoint_data:
+			self.get_logger().info(
+				f"[CHECKPOINT] Found resume checkpoint: "
+				f"cell {self._checkpoint_data.get('cell_idx',0)}/{self._checkpoint_data.get('total_cells',0)}"
+			)
+
 		self.get_logger().info("Path coverage node initialized successfully...")
 	
 
@@ -726,7 +741,6 @@ class MapDrive(Node):
 		while remaining:
 			ref = _get_ref_pose_xy()
 			if ref is None:
-				# 无法获取当前位姿时，退化为输入顺序
 				next_i = 0
 			else:
 				rx, ry = ref
@@ -743,7 +757,18 @@ class MapDrive(Node):
 				self.drive_polygon(next_cell["poly"])
 			except Exception as e:
 				self.get_logger().error(f"Cell {exec_idx} failed, skipping. error={e}")
+
+			# Save checkpoint after each cell (cell-level granularity for baseline)
+			save_checkpoint(
+				cell_idx=exec_idx - 1,
+				segment_idx=0,
+				total_cells=total_cells,
+			)
 			exec_idx += 1
+
+		# Clear checkpoint on normal completion
+		clear_checkpoint()
+		self.get_logger().info("[CHECKPOINT] Coverage completed, checkpoint cleared.")
 		#self.get_logger().info("12: ") # -------------------------------------
 		self.get_logger().info("Boustrophedon Decomposition completed...")
 

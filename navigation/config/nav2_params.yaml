@@ -156,7 +156,7 @@ local_costmap:
         cloud:
           topic: /rtabmap/cloud_obstacles
           max_obstacle_height: 2.0
-          clearing: True
+          clearing: False
           marking: True
           data_type: "PointCloud2"
           raytrace_max_range: 12.0
@@ -197,7 +197,7 @@ global_costmap:
         cloud:
           topic: /rtabmap/cloud_map
           max_obstacle_height: 2.0
-          clearing: True
+          clearing: False
           marking: True
           data_type: "PointCloud2"
           raytrace_max_range: 12.0

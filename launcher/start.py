@@ -78,6 +78,7 @@ class Launcher:
         self._running = True
         self._current_mode: str = "none"
         self._first_time = True
+        self._non_interactive = False  # set by --non-interactive, skip sudo stop
 
     # ── 输出 ──────────────────────────────────────────────────────────
 
@@ -220,6 +221,10 @@ class Launcher:
             pass  # 速度归零失败不阻塞
 
         # 2. sudo 执行系统级 stop 脚本（需要无密码 sudo 权限）
+        #    非交互模式下跳过 — 调用方（如 test 脚本）负责系统级清理
+        if self._non_interactive:
+            self._info('非交互模式，跳过 sudo stop_ros（由调用方负责清理）')
+            return
         stop_script = Path.home() / '.stop_ros.sh'
         if stop_script.exists():
             self._info('执行 sudo ~/.stop_ros.sh ...')
@@ -526,7 +531,7 @@ class Launcher:
         if not backups:
             print("  无备份")
             return
-        print(f"\n 地图备份 (~/.ros/maps/):")
+        print(f"\n 地图备份 (~/.ros/maps/):") 
         for b in backups:
             name = b.replace('.db', '')
             sz = os.path.getsize(os.path.join(MAP_BACKUP_DIR, b)) / 1024 / 1024
@@ -536,7 +541,9 @@ class Launcher:
         print()
 
     def _ensure_rviz(self) -> None:
-        """确保 RViz 在运行（如果已运行则跳过）。"""
+        """确保 RViz 在运行（如果已运行则跳过）。非交互模式跳过。"""
+        if self._non_interactive:
+            return
         if self._is_running("rviz"):
             self._info("RViz 已在运行，跳过")
             return
@@ -693,7 +700,49 @@ def parse_args() -> argparse.Namespace:
                         help='调试模式，输出全部 ROS2 日志（默认仅警告/错误）')
     parser.add_argument('--legacy', nargs='?', default=None,
                         help=argparse.SUPPRESS)  # 兼容旧参数，无实际作用
+    parser.add_argument('--non-interactive', action='store_true',
+                        help='非交互模式：直接执行指定命令后退出')
+    parser.add_argument('command', nargs='*', default=[],
+                        help='非交互模式下的命令 (如: coverage test_map test_180x240)')
     return parser.parse_args()
+
+
+def _non_interactive_run(launcher: Launcher, args: argparse.Namespace) -> None:
+    """Execute a single command non-interactively and exit."""
+    if not args.command:
+        print("非交互模式需要指定命令，如: python3 launcher/start.py --non-interactive coverage test_map test_180x240")
+        sys.exit(1)
+
+    # Mark non-interactive so _run_stop_ros skips sudo
+    launcher._non_interactive = True
+
+    cmd = args.command[0].lower()
+    cmd_args = args.command[1:] if len(args.command) > 1 else []
+
+    if cmd == "mapping":
+        launcher.start_mapping()
+    elif cmd == "coverage":
+        map_name = cmd_args[0] if len(cmd_args) > 0 else ""
+        region_name = cmd_args[1] if len(cmd_args) > 1 else ""
+        launcher.start_coverage(map_name, region_name)
+    elif cmd == "live":
+        region_name = cmd_args[0] if len(cmd_args) > 0 else ""
+        launcher.start_live(region_name)
+    else:
+        print(f"非交互模式不支持命令: {cmd}")
+        print("支持: mapping, coverage, live")
+        sys.exit(1)
+
+    # Wait for path_coverage to finish (or user Ctrl+C)
+    launcher._info("非交互模式：等待覆盖任务完成...")
+    try:
+        while launcher._is_running("path_coverage"):
+            time.sleep(2.0)
+    except KeyboardInterrupt:
+        launcher._info("收到中断信号")
+    finally:
+        launcher._kill_all()
+        launcher._info("非交互模式结束")
 
 
 def main() -> None:
@@ -708,7 +757,10 @@ def main() -> None:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
-    launcher.run()
+    if args.non_interactive:
+        _non_interactive_run(launcher, args)
+    else:
+        launcher.run()
 
 
 if __name__ == '__main__':

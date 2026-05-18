@@ -13,7 +13,7 @@ bash launcher/start.sh              # Shell 兼容包装
 ```
 > mapping                  ← 启动 SLAM 建图 + RViz，手动控车遍历区域
 
-> save test_map            ← 保存地图副本
+> save test_map            ← 保存地图副本到/home/ubuntu/.ros/maps
 > load test_map            ← 切换地图
 > list                     ← 查看所有地图和区域
 
@@ -27,7 +27,7 @@ bash launcher/start.sh              # Shell 兼容包装
 > quit
 ```
 
-> **区域管理**: 内置了 `test_180x240` 区域。用 `region <名称>` 可在 RViz 中圈选新的覆盖区域，保存到 `~/.ros/regions/`。
+> **区域管理**: 内置了 `test_180x240` 区域。用 `region <名称>` 可在 RViz 中圈选新的覆盖区域，保存到 `/home/ubuntu/.ros/regions/`。
 
 > **系统要求**: coverage/live 依赖 RTAB-Map 视觉 SLAM，EKF 已配置融合
 > `/rtabmap/localization_pose` 视觉里程计消除轮式漂移 (driver/controller/config/ekf.yaml)。
@@ -56,7 +56,7 @@ ros2 launch navigation rviz_rtabmap_navigation.launch.py
 ### 终端 3：按需运行
 
 > 修改 ROS2 包后需重新编译：`cd ros2_ws/ && colcon build --packages-select 包名 && source install/local_setup.sh`
-> cd ros2_ws/ && colcon build --packages-select navigation path_coverage && source install/local_setup.sh
+> `cd ros2_ws/ && colcon build --packages-select navigation path_coverage && source install/local_setup.sh`
 
 #### 正常作业：
 **A. 执行覆盖路径规划：**
@@ -118,4 +118,11 @@ python3 tools/test1_slam_nav_test.py --mode static  # 静态定位稳定性
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode cte  # 直线 CTE
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 1to3    # 避障 1→3
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 4to2    # 避障 4→2
+```
+
+```bash
+tmux new-session -A -s ros   # 启动/重连持久会话
+cd ros2_ws/src
+# 终端意外断开后：
+tmux attach -t ros           # 恢复所有进程状态
 ```

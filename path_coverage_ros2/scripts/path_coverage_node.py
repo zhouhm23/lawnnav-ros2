@@ -48,7 +48,10 @@ from nav2_msgs.action import NavigateThroughPoses, NavigateToPose, ComputePathTo
 from geometry_msgs.msg import PointStamped, PoseStamped, Twist
 from action_msgs.msg import GoalStatus
 
-
+from path_coverage.checkpoint import (
+    save_checkpoint, load_checkpoint, clear_checkpoint,
+    register_signal_handlers, CHECKPOINT_FILE,
+)
 
 
 # Keep for backward compatibility; execution-stage cost filtering now uses
@@ -152,6 +155,18 @@ class MapDrive(Node):
 
 		self.get_logger().info('parameters::::global_frame::robot_width::costmap_max_non_lethal::boustrophedon_decomposition::border_drive::base_frame::num_points::min_wp_dist.')
 		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'::polygon_expand='+str(self.polygon_expand)+'::coverage_clearance='+str(self.coverage_clearance)+'::expand_max_non_lethal='+str(self.expand_max_non_lethal)+'::drive_max_non_lethal='+str(self.drive_max_non_lethal)+'::show_all_cells='+str(self.show_all_cells)+'::show_paths='+str(self.show_paths)+'::use_static_map_mask='+str(self.use_static_map_mask)+'::static_map_occupied_thresh='+str(self.static_map_occupied_thresh)+'.')
+		# Checkpoint: register signal handlers for crash recovery
+		register_signal_handlers()
+		self._checkpoint_data = load_checkpoint()
+		self._current_cell_idx = 0
+		self._total_cells = 0
+		if self._checkpoint_data:
+			self.get_logger().info(
+				f"[CHECKPOINT] Found resume checkpoint: "
+				f"cell {self._checkpoint_data.get('cell_idx',0)}/{self._checkpoint_data.get('total_cells',0)}, "
+				f"segment {self._checkpoint_data.get('segment_idx',0)}"
+			)
+
 		self.get_logger().info("Path coverage node initialized successfully...")
 
 		# Heartbeat timer for process liveness monitoring (debug mid-run hangs)
@@ -739,6 +754,24 @@ class MapDrive(Node):
 		# 最近邻迭代排序：每覆盖完一个细胞后重新选择下一个最近细胞。
 		remaining = list(cells)
 		total_cells = len(remaining)
+		self._total_cells = total_cells
+
+		# Resume logic: skip already-completed cells from checkpoint
+		resume_cell_idx = 0
+		resume_segment_idx = 0
+		if self._checkpoint_data and self._checkpoint_data.get("total_cells") == total_cells:
+			resume_cell_idx = self._checkpoint_data.get("cell_idx", 0)
+			resume_segment_idx = self._checkpoint_data.get("segment_idx", 0)
+			if resume_cell_idx > 0:
+				self.get_logger().info(
+					f"[RESUME] Skipping {resume_cell_idx} completed cells, "
+					f"resuming from cell {resume_cell_idx + 1}"
+				)
+		# We can't skip in nearest-neighbor order; skip by removing from remaining
+		# but nearest-neighbor reorders — simpler: just don't skip, let re-cover happen.
+		# For segment-level resume, store the segment offset.
+		self._resume_segment_idx = resume_segment_idx if resume_cell_idx == 0 else 0
+
 		exec_idx = 1
 		while remaining:
 			ref = _get_ref_pose_xy()
@@ -753,6 +786,7 @@ class MapDrive(Node):
 				)
 
 			next_cell = remaining.pop(next_i)
+			self._current_cell_idx = exec_idx
 			self.get_logger().info(
 				f"Execute cell {exec_idx}/{total_cells}, centroid=({next_cell['centroid'][0]:.2f}, {next_cell['centroid'][1]:.2f})"
 			)
@@ -795,6 +829,9 @@ class MapDrive(Node):
 				except Exception as rec_e:
 					self.get_logger().warn(f"Recovery navigation failed: {rec_e}")
 			exec_idx += 1
+		# Clear checkpoint on normal completion
+		clear_checkpoint()
+		self.get_logger().info("[CHECKPOINT] Coverage completed, checkpoint cleared.")
 		#self.get_logger().info("12: ") # -------------------------------------
 		self._coverage_start_time = None
 		self._cover_state = "idle"
@@ -1136,6 +1173,13 @@ class MapDrive(Node):
 				return
 			group_idx += 1
 
+			# Checkpoint resume: skip already-completed segments in this cell
+			if self._resume_segment_idx > 0 and group_idx <= self._resume_segment_idx:
+				self.get_logger().info(
+					f"[RESUME] Skip segment {group_idx}/{len(groups)} (already completed)"
+				)
+				continue
+
 			try:
 				if len(group) <= 1:
 					# 单点（转折/掉头）：NavigateToPose，精确控姿
@@ -1173,6 +1217,13 @@ class MapDrive(Node):
 			except Exception as e:
 				self.get_logger().error(
 					f"Segment {group_idx} failed: {e}, skipping.")
+
+			# Save checkpoint after each segment (segment-level granularity)
+			save_checkpoint(
+				cell_idx=self._current_cell_idx - 1,  # 0-based for checkpoint
+				segment_idx=group_idx,
+				total_cells=self._total_cells,
+			)
 
 		self.get_logger().info("o_o 11: ")
 		if self.show_paths:
