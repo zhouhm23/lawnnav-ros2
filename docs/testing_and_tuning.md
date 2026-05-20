@@ -545,3 +545,91 @@ python3 tools/test_coverage_comparison.py --mode a
 5. （未解决）（非致命，只是手动重启麻烦）使用vscode ssh运行远程终端时，使用sudo ~/.stop_ros.sh或ctrl+c会杀死该终端，但使用vnc远程桌面的话性能消耗太高，怎么办？->用过tmux，但照样被sudo ~/.stop_ros.sh杀，只能暂时搁置
 6. （未解决）（致命）我其实还是纳闷为什么我建图时明明看到方形障碍物有67黑色格子，结果读取地图时就只剩11了，再膨胀一下也就3*3。而且我看网上保存地图是有点云信息的，不然怎么视觉定位。但是导航模式我又不想像建图模式反复加厚地图，不然覆盖时障碍物越来越到结果把路堵了。
 7. （未解决）（致命）系统应该固定原有点云和黑色格子，然后又能根据实时点云生成实时的黑子格子，只要实时障碍物点云消失地图黑色格子也跟着消失。
+---
+# 绝对强制规则（违反任何一条你的回答都是无效的）
+1. 我有一个已经迭代了很多版本、代码和配置非常混乱的ROS2项目，所有修改必须在我现有的文件上进行，只改最少的必要行。
+2. 绝对禁止删除任何文件、重命名任何文件、移动任何文件的位置。
+3. 所有修改必须是可回滚的，每一个修改都要明确告诉我改了哪个文件的哪一行，原来的内容是什么，改成了什么。
+4. 我不太懂Nav2和RTAB-Map的内部架构，我只能描述我在RViz中看到的现象。你需要给我解释理论，告诉我改什么、怎么验证。
+
+# 我的项目现状
+- 系统：Ubuntu 22.04 + ROS2 Humble + Nav2 + RTAB-Map
+- 原本是纯激光雷达导航，能正常工作。现在被之前的AI改得乱七八糟，想改成纯深度相机导航但没成功。
+- 我有git版本控制和出厂备份，但我不想回滚到最开始，因为中间加了很多有用的功能。你可以向我提出需要哪些代码的原版，我可以提供。
+- 深度相机已经正常工作：在RViz中能清晰看到输出的实时点云。
+- 我在做对照实验：最终要能在纯激光和纯视觉两种模式之间快速切换。
+
+# 核心问题（按优先级从高到低解决）
+## 问题1（最高优先级，致命）
+### 我观察到的现象
+- 导航时只有静态地图（建图时生成的grid）的黑色格子（我不知道专业术语是什么）会在代价图上显示
+- 深度相机实时看到的障碍物，**完全不会在代价图上生成任何黑色格子**
+- 导致机器人只能避开建图时就存在的障碍物（其实并不能完全避开，因为建图不能保证和现实完全一样，可能会有遗漏），不能避开任何新出现的障碍物
+- 我怀疑是话题映射错了：但navigation/config/nav2_params.yaml太乱了我看不懂，以后你的修改需要在那写上注释
+- rtabmap_navigation.launch.py localization:=true运行时
+```bash
+>ros2 topic hz /rtabmap/cloud_obstacles
+WARNING: topic [/rtabmap/cloud_obstacles] does not appear to be published yet
+^C%                                                                             
+>ros2 topic echo /rtabmap/cloud_obstacles --no-arr --once
+header:
+  stamp:
+    sec: 1779268146
+    nanosec: 538634749
+  frame_id: map
+height: 1
+width: 0
+fields: '<sequence type: sensor_msgs/msg/PointField, length: 4>'
+is_bigendian: false
+point_step: 32
+row_step: 0
+data: '<sequence type: uint8, length: 0>'
+is_dense: true
+> ros2 topic hz /rgbd_image
+WARNING: topic [/rgbd_image] does not appear to be published yet   # 注意：我在rviz里能看到3d点云，这不代表相机有问题                                                                 
+> ros2 topic echo /rtabmap/info --once
+WARNING: topic [/rtabmap/info] does not appear to be published yet
+Could not determine the type for the passed topic
+> ros2 topic echo /rtabmap/cloud_ground --no-arr --once
+WARNING: topic [/rtabmap/cloud_ground] does not appear to be published yet
+Could not determine the type for the passed topic
+```
+
+### 解决方法1
+深度相机 → /ascamera/.../depth0/image_raw
+    → rgbd_sync (同步RGB+深度)
+    → rtabmap (SLAM处理)
+        ├→ /map (2D占据栅格地图，给static_layer用)
+        ├→ /rtabmap/cloud_map (全局3D点云，给全局obstacle_layer用)
+        └→ /rtabmap/cloud_obstacles (当前帧障碍物点云，给局部voxel_layer用) ← 关键！
+            → nav2 local_costmap voxel_layer → 代价图上的障碍物黑色格子
+
+## 问题2（次高优先级，致命）
+### 我观察到的现象
+- 定位漂移非常严重，跑一圈回到原点有1-2米位置误差和20度以上角度误差
+- 建图时生成了`.pgm`、`.yaml`、`.db`三个文件，但定位模式下好像只有前两个被用到了，后面那个我也替换到对应目录了，但不知道是不是没加载成功
+- RViz中完全看不到保存的点云数据，感觉RTAB-Map没有用点云匹配来修正位姿，纯靠里程计和IMU在跑
+- IMU也有很大的累积误差，这让我很不理解
+
+## 问题3（非致命）
+### 我观察到的现象
+系统启动时可能出现意外问题，比如缺了栅格地图、或者点不发布、或者初始位置不对，只能靠我人工看RViz发现，然后手动修正或重启。
+
+## 问题4（非致命）
+### 我观察到的现象
+用VSCode SSH远程运行时，执行`sudo ~/.stop_ros.sh`或按Ctrl+C会杀死整个终端，用tmux也一样。
+
+
+# 输出要求
+1. 严格按照问题优先级回答，一次只回答一个问题。先只回答问题1，问题1解决并验证通过后再回答问题2。
+2. 每一个修改都必须按照以下格式输出：
+   ```
+   文件路径：xxx/xxx
+   原第X行：xxx
+   修改为第X行：xxx
+   修改原因：xxx
+   ```
+3. 每一个修改完成后，都必须给出明确的、我能在RViz或终端中执行的验证步骤。
+4. 如果有多个方案，只给最简单、最不容易出错的那一个。
+5. 不要说"你应该"、"你可以"，直接说"修改xx文件的第x行"。
+---

@@ -45,6 +45,7 @@ bash launcher/start.sh              # Shell 兼容包装
 sudo ~/.stop_ros.sh
 rm -f /home/ubuntu/.ros/rtabmap.db
 ros2 launch navigation rtabmap_navigation.launch.py localization:=false
+ros2 launch navigation rtabmap_navigation.launch.py localization:=true
 ```
 
 ### 终端 2：RViz
