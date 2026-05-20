@@ -26,7 +26,11 @@ rtabmap:
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
-    'subscribe_rgbd': true
+    'subscribe_rgbd': true  # 等待RGB+深度同步（RGB无数据时sync不输出，RTAB-Map仅发布TF无帧处理）
     'subscribe_scan': false
     'Reg/Strategy': '1'
     'Reg/Force3DoF': 'true'
+    # Params previously hardcoded in launch file, now centralized here:
+    'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
+    'grid_size': '20'
+    'Grid/Sensor': 'true'

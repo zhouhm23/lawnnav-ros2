@@ -545,6 +545,37 @@ python3 tools/test_coverage_comparison.py --mode a
 5. （未解决）（非致命，只是手动重启麻烦）使用vscode ssh运行远程终端时，使用sudo ~/.stop_ros.sh或ctrl+c会杀死该终端，但使用vnc远程桌面的话性能消耗太高，怎么办？->用过tmux，但照样被sudo ~/.stop_ros.sh杀，只能暂时搁置
 6. （未解决）（致命）我其实还是纳闷为什么我建图时明明看到方形障碍物有67黑色格子，结果读取地图时就只剩11了，再膨胀一下也就3*3。而且我看网上保存地图是有点云信息的，不然怎么视觉定位。但是导航模式我又不想像建图模式反复加厚地图，不然覆盖时障碍物越来越到结果把路堵了。
 7. （未解决）（致命）系统应该固定原有点云和黑色格子，然后又能根据实时点云生成实时的黑子格子，只要实时障碍物点云消失地图黑色格子也跟着消失。
+
+### 5.20号修复：问题1 — 代价图无动态障碍物（v2：直连方案）
+
+**v1失败原因**: 尝试让RTAB-Map切换纯深度模式(`subscribe_depth`)，但`rgbd_sync`等待`depth/camera_info`数据（该话题也可能无数据），同样死锁。且障碍物检测绑定在RTAB-Map数据链路上，链路脆弱难以调试。
+
+**v2正确方案 — 障碍物检测与SLAM定位走独立路径**:
+```
+深度相机点云 /ascamera/.../depth0/points  ──→  Nav2 local_costmap voxel_layer  → 动态障碍物黑格
+RTAB-Map (subscribe_rgbd, 无帧处理)       ──→  仅发布TF (map→odom)                → 定位
+map_server                                 ──→  static_layer                       → 静态地图黑格
+```
+两条路径互不依赖。RTAB-Map恢复原始状态（仅发布TF不做帧处理），障碍物检测由Nav2直接读取深度相机原始点云完成。
+
+**修改文件**:
+| 文件 | 改动 |
+|------|------|
+| `navigation/launch/include/rtabmap.launch.py` | 回滚到原始`subscribe_rgbd:True`；恢复RGB映射；移除`subscribe_depth`、`depth/camera_info`映射；保留之前的代码清理（6个launch级参数+YAML管理） |
+| `navigation/config/rtabmap_params.yaml` | 回滚`subscribe_rgbd:true`，移除`subscribe_depth` |
+| `navigation/config/nav2_params.yaml` | **关键改动**: local_costmap voxel_layer新增`depth_camera`观察源，直连`/ascamera/.../depth0/points`，设置`clearing:True, marking:True, min_obstacle_height:0.03`过滤地面 |
+
+**验证步骤**:
+```bash
+# 确认深度点云正常（已知OK）
+ros2 topic hz /ascamera/camera_publisher/depth0/points
+
+# 重启导航后在RViz查看 /local_costmap/costmap，车前方放障碍物
+# 预期：首次出现障碍物黑色格子
+# 如整个地面变黑 → min_obstacle_height需调整（地面点未被过滤）
+# 如障碍物也不显示 → 检查TF树: ros2 run tf2_tools view_frames
+```
+
 ---
 # 绝对强制规则（违反任何一条你的回答都是无效的）
 1. 我有一个已经迭代了很多版本、代码和配置非常混乱的ROS2项目，所有修改必须在我现有的文件上进行，只改最少的必要行。

@@ -12,51 +12,14 @@ def launch_setup(context):
     localization = LaunchConfiguration('localization').perform(context)
 
     parameters={
+          # === Launch-level params (ROS topics, QoS, frame) ===
           'frame_id':'base_footprint',
           'use_sim_time':use_sim_time,
-          'subscribe_rgbd':True,
-          'subscribe_scan': False,
           'use_action_for_goal':True,
           'qos_scan':qos,
           'qos_image':qos,
           'qos_imu':qos,
-          # RTAB-Map's parameters should be strings:
-          'queue_size': 30,
-          'Reg/Strategy':'1',
-          'Reg/Force3DoF':'true',
-          'RGBD/NeighborLinkRefining':'false',
-          'Rtabmap/DetectionRate':'8',
-          'RGBD/LinearUpdate':'0.10',
-          'RGBD/AngularUpdate':'0.10',
-          'Vis/MaxFeatures':'800',
-          'OdomF2M/MaxSize':'1000',
-          # Lower RangeMin so near points are not discarded (useful for close-to-robot ground)
-          'Grid/RangeMin':'0.04',
-          # Ensure a sensible max range for projection and grid
-          'Grid/RangeMax':'10.0',
-          'Grid/CellSize':'0.05',
-          'Grid/MinGroundHeight':'-0.20',
-          'Grid/MaxGroundHeight':'0.05',
-          'Grid/MapFrameProjection':'true',
-          'Grid/MaxGroundAngle':'15',
-          'Grid/GroundIsObstacle':'false',
-          'Grid/NormalsSegmentation':'true',
-          # Parameters that influence ground projection (may be ignored if node doesn't declare them)
-          'proj_max_ground_height':'0.20',  # deprecated, overridden by Grid params
-          'proj_max_ground_angle':'15',
-          'RGBD/ProximityBySpace':'true',
-          'RGBD/ProximityPathMaxNeighbors':'5',
-          'Optimizer/GravitySigma':'0', # Disable imu constraints (we are already in 2D)
-          # 'Vis/CorType': '0',
-          # 'OdomF2M/MaxSize': '4000',
-          # 'Vis/MaxFeatures': '2000',
-          # 'Optimizer/Slam2D': 'true',
-          'grid_size': '20',
-          'Grid/Sensor': 'true',
-          'Grid/3D': 'true',
-          # 'RGBD/ProximityPathMaxNeighbors': '10',
-          # 'proj_max_ground_height': '0.01',
-          # 'proj_max_ground_angle': '10',
+          # === All RTAB-Map algorithm params are in rtabmap_params.yaml ===
     }
 
     remappings=[
@@ -96,6 +59,33 @@ def launch_setup(context):
             package='rtabmap_slam', executable='rtabmap', output='screen',
             parameters=rtabmap_parameters,
             remappings=remappings),
+
+        # === 虚拟雷达节点：深度相机点云 → LaserScan → /scan_raw ===
+        # 原理：提取点云中离地2cm-30cm的点投影到水平面，生成标准LaserScan。
+        # Nav2代价图和RTAB-Map都读/scan_raw，它们不知道底层是深度相机。
+        Node(
+            package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
+            name='depth_to_scan',
+            output='screen',
+            parameters=[{
+                'target_frame': 'base_footprint',
+                'transform_tolerance': 0.1,
+                'min_height': 0.02,   # 离地2cm以上(过滤地面)
+                'max_height': 0.30,   # 离地30cm以下(只关心低矮障碍物)
+                'angle_min': -1.57,   # -90度(覆盖前方半圆)
+                'angle_max': 1.57,    # +90度
+                'angle_increment': 0.0087,  # ~0.5度分辨率
+                'scan_time': 0.1,     # 10Hz
+                'range_min': 0.1,     # 10cm最小距离
+                'range_max': 3.0,     # 3m最大距离(深度相机可靠范围)
+                'use_inf': True,
+                'inf_epsilon': 1.0,
+                'use_sim_time': use_sim_time,
+            }],
+            remappings=[
+                ('cloud_in', '/ascamera/camera_publisher/depth0/points'),
+                ('scan', '/scan_raw'),
+            ]),
     ]
 
 def generate_launch_description():
