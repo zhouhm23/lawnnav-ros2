@@ -27,16 +27,6 @@ bash launcher/start.sh              # Shell 兼容包装
 > quit
 ```
 
-> **区域管理**: 内置了 `test_180x240` 区域。用 `region <名称>` 可在 RViz 中圈选新的覆盖区域，保存到 `/home/ubuntu/.ros/regions/`。
-
-> **系统要求**: coverage/live 依赖 RTAB-Map 视觉 SLAM，EKF 已配置融合
-> `/rtabmap/localization_pose` 视觉里程计消除轮式漂移 (driver/controller/config/ekf.yaml)。
-> 对照组实验需 LD19 激光雷达已连接。
-
-> **提示**: 旧版 `tools/start_path_coverage.sh` 仍可用，内部自动转发到新启动器。
-
----
-
 ## 分步手动启动
 
 ### 终端 1：SLAM + 导航
@@ -46,6 +36,8 @@ sudo ~/.stop_ros.sh
 rm -f /home/ubuntu/.ros/rtabmap.db
 ros2 launch navigation rtabmap_navigation.launch.py localization:=false
 ros2 launch navigation rtabmap_navigation.launch.py localization:=true
+
+python3 tools/radar_mapping.py radar_map
 ```
 
 ### 终端 2：RViz
@@ -57,7 +49,7 @@ ros2 launch navigation rviz_rtabmap_navigation.launch.py
 ### 终端 3：按需运行
 
 > 修改 ROS2 包后需重新编译：`cd ros2_ws/ && colcon build --packages-select 包名 && source install/local_setup.sh`
-> `cd ros2_ws/ && colcon build --packages-select navigation path_coverage && source install/local_setup.sh`
+> 常用`cd ros2_ws/ && colcon build --packages-select navigation path_coverage && source install/local_setup.sh`
 
 #### 正常作业：
 **A. 执行覆盖路径规划：**
@@ -90,11 +82,9 @@ ros2 launch coverage_evaluator coverage_evaluator.launch.py
 **D. 三组消融对照实验 (Group A/B/C)：**
 
 ```bash
-# 前置: launcher 中 mapping → save test_map，Group A 需接 LD19
 python3 tools/test_coverage_comparison.py --mode a       # Group A: LiDAR + 原始
 python3 tools/test_coverage_comparison.py --mode b       # Group B: RTAB-Map + 原始 (消融)
 python3 tools/test_coverage_comparison.py --mode c       # Group C: RTAB-Map + 改进 (创新)
-python3 tools/test_coverage_comparison.py --mode all     # 全部三组依次运行
 ```
 三组对比论证：A vs B 证明仅换传感器不够，B vs C 证明算法改进是必要条件，A vs C 证明完整方案可达传统水平。
 
@@ -119,11 +109,4 @@ python3 tools/test1_slam_nav_test.py --mode static  # 静态定位稳定性
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode cte  # 直线 CTE
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 1to3    # 避障 1→3
 python3 tools/test2_nav_cte_and_obstacle_test.py --mode obstacle --path 4to2    # 避障 4→2
-```
-
-```bash
-tmux new-session -A -s ros   # 启动/重连持久会话
-cd ros2_ws/src
-# 终端意外断开后：
-tmux attach -t ros           # 恢复所有进程状态
 ```

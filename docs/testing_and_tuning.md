@@ -626,14 +626,6 @@ WARNING: topic [/rtabmap/cloud_ground] does not appear to be published yet
 Could not determine the type for the passed topic
 ```
 
-### 解决方法1
-深度相机 → /ascamera/.../depth0/image_raw
-    → rgbd_sync (同步RGB+深度)
-    → rtabmap (SLAM处理)
-        ├→ /map (2D占据栅格地图，给static_layer用)
-        ├→ /rtabmap/cloud_map (全局3D点云，给全局obstacle_layer用)
-        └→ /rtabmap/cloud_obstacles (当前帧障碍物点云，给局部voxel_layer用) ← 关键！
-            → nav2 local_costmap voxel_layer → 代价图上的障碍物黑色格子
 
 ## 问题2（次高优先级，致命）
 ### 我观察到的现象
@@ -664,3 +656,8 @@ Could not determine the type for the passed topic
 4. 如果有多个方案，只给最简单、最不容易出错的那一个。
 5. 不要说"你应该"、"你可以"，直接说"修改xx文件的第x行"。
 ---
+
+### 5.21测试结果
+1.nav路径规划没考虑localcostmap
+2.python3 tools/radar_mapping.py radar_map因为没启动nav导致小车走不了，因为我建图是靠发布2d点让小车运动来建图
+3.相机覆盖时map没发布，应该是话题映射有问题，可能因为是不同类型

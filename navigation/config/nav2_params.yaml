@@ -183,10 +183,24 @@ global_costmap:
       robot_radius: 0.11
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "inflation_layer"]  # 全局代价图只用静态地图+膨胀，动态障碍物由局部代价图处理（深度相机无360°视野，全局clearing不完整）
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
+        map_subscribe_transient_local: True  # 一般建议全局代价地图设为 True
+      obstacle_layer: 
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        combination_method: 1
+        observation_sources: scan
+        scan:
+          topic: /scan_raw
+          data_type: "LaserScan"
+          clearing: true # 设为False后即使障碍物已经移开，地图上仍会保留历史标记，所以需要设置成True
+          marking: True
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.0

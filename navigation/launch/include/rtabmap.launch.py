@@ -32,6 +32,7 @@ def launch_setup(context):
             ('imu', '/imu/data'),
             ('cloud_map', '/rtabmap/cloud_map'),
             ('cloud_obstacles', '/rtabmap/cloud_obstacles'),
+            ('grid_map', '/map'),  # RTAB-Map栅格地图直接发布到/map，Nav2 static_layer直接读取（无需map_server）
           ]
 
     # path to optional params file in navigation package
@@ -52,7 +53,7 @@ def launch_setup(context):
     return [
         Node(
             package='rtabmap_sync', executable='rgbd_sync', output='screen',
-            parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.008, 'use_sim_time':use_sim_time, 'qos':qos}],
+            parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.05, 'use_sim_time':use_sim_time, 'qos':qos}],
             remappings=remappings),
 
         Node(

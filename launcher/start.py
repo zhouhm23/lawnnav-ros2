@@ -284,29 +284,14 @@ class Launcher:
         self._info(f"地图: {map_name or '(当前)'}, 区域: {os.path.basename(region_file)}")
 
         # 启动纯定位 navigation
+        # RTAB-Map 的 grid_map 已在 rtabmap.launch.py 中 remap 到 /map，Nav2 static_layer 直接读取
+        # 不需要 map_server 发布静态 .pgm（.pgm 可能丢失 .db 中的完整障碍物信息）
         self._info("=== 纯定位覆盖 (localization:=true) ===")
         self._spawn("navigation",
                     "ros2 launch navigation rtabmap_navigation.launch.py localization:=true")
         time.sleep(2.0)
         self._ensure_rviz()
         time.sleep(5.0)
-
-        # map_server 补充栅格地图
-        grid_yaml = os.path.join(MAP_BACKUP_DIR, f"{map_name}.yaml") if map_name else ""
-        if grid_yaml and os.path.exists(grid_yaml):
-            self._spawn("map_server",
-                        f"ros2 run nav2_map_server map_server "
-                        f"--ros-args -p yaml_filename:={shlex.quote(grid_yaml)}")
-            time.sleep(3.0)
-            subprocess.run(
-                f"{self._source_cmd()} && "
-                f"ros2 lifecycle set /map_server configure && "
-                f"ros2 lifecycle set /map_server activate",
-                shell=True, executable='/bin/bash',
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=10,
-            )
-            time.sleep(1.0)
 
         self._current_mode = "coverage"
         self._launch_coverage_tools(region_file)
@@ -482,15 +467,13 @@ class Launcher:
         else:
             self._warn(f"{RTABMAP_DB} 不存在，跳过数据库保存")
 
-        # 2. 保存栅格地图 (RTAB-Map 发布在 /rtabmap/grid_map 而非 /map)
+        # 2. 保存栅格地图 — RTAB-Map 已在 rtabmap.launch.py 中将 grid_map remap 到 /map
         grid_path = os.path.join(MAP_BACKUP_DIR, name)
         self._info("保存栅格地图 (调用 map_saver_cli)...")
         try:
             subprocess.run(
                 f"{self._source_cmd()} && "
-                f"ros2 run nav2_map_server map_saver_cli -f {shlex.quote(grid_path)} "
-                f"--ros-args -p map_subscribe_transient_local:=true "
-                f"-r /map:=/rtabmap/grid_map",
+                f"ros2 run nav2_map_server map_saver_cli -f {shlex.quote(grid_path)}",
                 shell=True, executable='/bin/bash',
                 stdout=subprocess.DEVNULL if not self.debug else None,
                 stderr=subprocess.DEVNULL if not self.debug else None,
@@ -507,7 +490,7 @@ class Launcher:
         else:
             self._warn(f"栅格地图保存失败 (exit={rc})，"
                        f"可能 /map topic 暂无数据。"
-                       f" 下次 save 前请确保 RTAB-Map 已积累足够地图数据。")
+                       f" 请确保 RTAB-Map 已积累足够地图数据后再 save。")
 
     def restore_map(self, name: str) -> None:
         """从备份恢复 rtabmap.db。"""

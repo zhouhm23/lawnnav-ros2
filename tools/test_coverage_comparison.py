@@ -80,39 +80,34 @@ def _stop_ros():
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1.5)
 
-def _ensure_test_map():
-    yd, pd = os.path.join(SLAM_MAPS_DIR, f"{DEFAULT_MAP}.yaml"), os.path.join(SLAM_MAPS_DIR, f"{DEFAULT_MAP}.pgm")
+def _ensure_test_map(map_name):
+    yd, pd = os.path.join(SLAM_MAPS_DIR, f"{map_name}.yaml"), os.path.join(SLAM_MAPS_DIR, f"{map_name}.pgm")
     if os.path.exists(yd): return True
-    ys = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.yaml")
+    ys = os.path.join(MAP_BACKUP_DIR, f"{map_name}.yaml")
     if not os.path.exists(ys): _warn(f"未找到 {ys}"); return False
     os.makedirs(SLAM_MAPS_DIR, exist_ok=True)
     shutil.copy2(ys, yd)
-    if os.path.exists(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm")): shutil.copy2(os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.pgm"), pd)
+    if os.path.exists(os.path.join(MAP_BACKUP_DIR, f"{map_name}.pgm")): shutil.copy2(os.path.join(MAP_BACKUP_DIR, f"{map_name}.pgm"), pd)
     _ok(f"地图已复制到 {SLAM_MAPS_DIR}"); return True
 
-def _restore_rtabmap_db() -> bool:
+def _restore_rtabmap_db(map_name) -> bool:
     """恢复保存的 rtabmap.db — 与 launcher restore_map 行为一致。
 
     localization:=true 模式必须使用建图时保存的数据库，
     否则 RTAB-Map 无法正确定位。
     """
-    src_db = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.db")
+    src_db = os.path.join(MAP_BACKUP_DIR, f"{map_name}.db")
     if not os.path.exists(src_db):
         _warn(f"rtabmap.db 备份不存在: {src_db}")
-        _warn("请确保已在 launcher 中执行过 save test_map")
+        _warn(f"请确保已在 launcher 中执行过 save {map_name}")
         return False
     dst_db = str(Path.home() / ".ros" / "rtabmap.db")
     shutil.copy2(src_db, dst_db)
-    _ok(f"rtabmap.db 已恢复: {DEFAULT_MAP}.db → ~/.ros/rtabmap.db")
+    _ok(f"rtabmap.db 已恢复: {map_name}.db → ~/.ros/rtabmap.db")
+    return True
 
-def _check_ld19():
-    try:
-        r = subprocess.run(["bash", "-lc", f"{_source_cmd()} && ros2 topic hz /scan --timeout 3 2>&1"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=8)
-        return "average rate" in r.stdout.decode(errors="replace").lower()
-    except: return False
-
-def _launch_mapserver(prefix):
-    gy = os.path.join(MAP_BACKUP_DIR, f"{DEFAULT_MAP}.yaml")
+def _launch_mapserver(prefix, map_name):
+    gy = os.path.join(MAP_BACKUP_DIR, f"{map_name}.yaml")
     if not os.path.exists(gy): _warn(f"地图不存在: {gy}"); return
     _info("启动 map_server...")
     subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && ros2 run nav2_map_server map_server --ros-args -p yaml_filename:={shlex.quote(gy)}"],
@@ -129,15 +124,17 @@ def _cleanup(*ps):
             if p: p.wait(timeout=3.0)
         except: pass
 
-def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait):
+def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait, map_name, need_db=False):
     _stop_ros(); os.makedirs(LOG_DIR, exist_ok=True)
     nav = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {nav_cmd}"],
                            stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_nav.log"), "w"), stderr=subprocess.STDOUT,
                            preexec_fn=lambda: _preexec_fn("navigation"), env=_ros_env())
     time.sleep(10.0)
-    if use_mapserver: _launch_mapserver(PREFIX[label])
+    if use_mapserver: _launch_mapserver(PREFIX[label], map_name)
     _info(f"等待 costmap 稳定 ({costmap_wait}s)..."); time.sleep(costmap_wait)
-    _restore_rtabmap_db();_info(f"rtabmap_db已恢复")
+    if need_db:
+        _restore_rtabmap_db(map_name)
+        _info(f"rtabmap_db已恢复")
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {pathcov_cmd}"],
                            stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_pathcoverage.log"), "w"), stderr=subprocess.STDOUT,
                            preexec_fn=lambda: _preexec_fn("pathcov"), env=_ros_env())
@@ -145,9 +142,6 @@ def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait):
                            stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_evaluator.log"), "w"), stderr=subprocess.STDOUT,
                            preexec_fn=lambda: _preexec_fn("evaluator"), env=_ros_env())
     _info("等待节点就绪 (5s)..."); time.sleep(5.0)
-    # Quick LD19 check for Group A (after nav started)
-    if label == "a" and not _check_ld19():
-        _warn("LD19 未检测到 /scan，覆盖可能失败！继续？"); input()
     pub = str(LAUNCHER_DIR / "publish_region.py")
     rc = subprocess.run(["python3", pub, "--file", REGION_FILE, "--wait", "5"], timeout=30)
     if rc.returncode != 0: _warn(f"区域发布失败"); _cleanup(pc, ev, nav); return
@@ -159,22 +153,28 @@ def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait):
 
 def run_group_a():
     print("\n\033[1;34m=== Group A: LiDAR + 原始算法 ===\033[0m\n")
-    if not _ensure_test_map(): return
-    _run_common("a", f"ros2 launch navigation navigation.launch.py map:={DEFAULT_MAP}",  "ros2 launch path_coverage path_coverage_baseline.launch.py", False, 5)
+    map_name = "radar_map"  # 雷达建图: 先用 tools/radar_mapping.py 建图
+    if not _ensure_test_map(map_name): return
+    _run_common("a", f"ros2 launch navigation navigation.launch.py map:={map_name}",
+                "ros2 launch path_coverage path_coverage_baseline.launch.py",
+                False, 5, map_name)
 
 def run_group_b():
     print("\n\033[1;33m=== Group B: RTAB-Map + 原始算法 (消融) ===\033[0m\n")
-    _run_common("b", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true",  "ros2 launch path_coverage path_coverage_baseline.launch.py", True, 5)
+    map_name = "camera_map"  # 相机建图: 在 launcher 中 mapping → save camera_map
+    _run_common("b", "ros2 launch navigation rtabmap_navigation.launch.py localization:=true",
+                "ros2 launch path_coverage path_coverage_baseline.launch.py",
+                False, 5, map_name, need_db=True)  # 相机模式不需要map_server，RTAB-Map直接发布/map
 
 def run_group_c():
     print("\n\033[1;32m=== Group C: RTAB-Map + 改进算法 (创新) ===\033[0m\n")
     _stop_ros(); os.makedirs(LOG_DIR, exist_ok=True)
-    if not _ensure_test_map(): return
+    map_name = "camera_map"  # 相机建图: 在 launcher 中 mapping → save camera_map
     start_py = str(LAUNCHER_DIR / "start.py")
-    _info(f"调用 launcher: {start_py} --non-interactive coverage {DEFAULT_MAP} test_180x240")
+    _info(f"调用 launcher: {start_py} --non-interactive coverage {map_name} test_180x240")
     rc = subprocess.run(
-        ["python3", start_py, "--non-interactive", "coverage", DEFAULT_MAP, "test_180x240"],
-        timeout=3600,  # 1 hour max
+        ["python3", start_py, "--non-interactive", "coverage", map_name, "test_180x240"],
+        timeout=3600,
     )
     if rc.returncode != 0:
         _warn(f"start.py 退出码={rc.returncode}")

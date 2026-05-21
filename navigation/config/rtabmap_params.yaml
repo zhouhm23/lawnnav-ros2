@@ -26,7 +26,7 @@ rtabmap:
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
-    'subscribe_rgbd': true  # 等待RGB+深度同步（RGB无数据时sync不输出，RTAB-Map仅发布TF无帧处理）
+    'subscribe_rgbd': true  # RGB+深度同步→RTAB-Map进行视觉SLAM定位（与Nav2障碍物检测走独立路径，可共存）
     'subscribe_scan': false
     'Reg/Strategy': '1'
     'Reg/Force3DoF': 'true'
