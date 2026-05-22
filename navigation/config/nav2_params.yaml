@@ -213,7 +213,68 @@ global_costmap:
   global_costmap_rclcpp_node:
     ros__parameters:
       use_sim_time: False 
-      
+
+controller_server:
+  ros__parameters:
+    use_sim_time: False
+    controller_frequency: 10.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 10.0     # 差速/麦克纳姆：Y不可控，设大值禁用Y方向卡死检测
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 1.2
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.03
+      yaw_goal_tolerance: 0.03
+
+    # DWB：在local_costmap中评分多条候选轨迹，自然绕开障碍物
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      # --- 运动约束 ---
+      max_vel_x: 0.22
+      min_vel_x: 0.0
+      max_vel_y: 0.0                        # 差速/麦克纳姆覆盖时不侧移
+      min_vel_y: 0.0
+      max_vel_theta: 1.0                    # 原地转向速度
+      min_vel_theta: 0.0
+      acc_lim_x: 2.5
+      acc_lim_y: 0.0
+      acc_lim_theta: 2.5
+      decel_lim_x: -2.5
+      decel_lim_theta: -2.5
+      vx_samples: 10
+      vy_samples: 0                         # 不采样侧移
+      vtheta_samples: 20
+      sim_time: 1.2
+      # --- 轨迹评分权重（scale越高该项越重要） ---
+      critics: ["PathAlign", "PathDist", "GoalAlign", "GoalDist", "ObstacleFootprint"]
+      PathAlign.scale: 32.0                 # 对齐全局路径方向
+      PathDist.scale: 32.0                  # 贴近全局路径
+      GoalAlign.scale: 24.0                 # 朝向目标点
+      GoalDist.scale: 24.0                  # 接近目标点
+      ObstacleFootprint.scale: 1.0          # 避让障碍物（越大离障碍物越远）
+      # --- 旋转 ---
+      use_rotate_to_heading: true           # 支持原地转向
+      rotate_to_heading_min_angle: 0.2
+      max_angular_accel: 2.5
+      transform_tolerance: 0.5
+      # --- 路径插值 ---
+      use_interpolation: true
+
+controller_server_rclcpp_node:
+  ros__parameters:
+    use_sim_time: False
+
 map_server:
   ros__parameters:
     use_sim_time: False

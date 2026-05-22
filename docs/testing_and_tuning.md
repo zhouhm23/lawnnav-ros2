@@ -664,7 +664,9 @@ Could not determine the type for the passed topic
 
 ### 5.22测试结果
 1. （已解决）仅ros2 launch navigation rtabmap_navigation.launch.py localization:=true下mapData和map有数据，但数据只有第一帧；python3 launcher/start.py->coverage camera_map test_180x240下mapData和map没数据
-2. （已解决）车对边缘覆盖效果差，可能外扩参数设置不合理，也可能刹车距离太大->已经有robotmodel和膨胀层，安全距离不用太大
-3. （未解决）python3 tools/test_coverage_comparison.py --mode c不需要等待rviz启动
-4. （未解决）车不运动，这绝对因为刚才配置控制器不对，我已经回退了
-5. （未解决）nav路径规划没考虑localcostmap，导致路径规划进障碍物里，然后避障系统又阻止车行走
+2. （部分解决）车对边缘覆盖效果差，可能外扩参数设置不合理，也可能刹车距离太大->已经有robotmodel和膨胀层，安全距离不用太大->已调整了覆盖路径包参数，但问题仍存在，我观察发现是代价图问题
+3. （已解决）python3 tools/test_coverage_comparison.py --mode c不需要等待rviz启动
+4. （已解决）车不运动，这绝对因为刚才配置控制器不对，我已经回退了
+5. （已解决）nav路径规划没考虑localcostmap，导致路径规划进障碍物里，然后避障系统又阻止车行走
+6. （未解决）实时避障不能检测到低矮障碍物，车底盘高才3cm，相机高10cm本可以尝试避开高于3cm的障碍物（2D雷达原理上就不行，因为它高16cm）
+7. （未解决）相机定位模式下本地代价图精度非常差，有时候会大于实际，导致车覆盖率低（这种情况多）；有时候又小于实际，导致车碰障（这种情况少，目前撞2次）

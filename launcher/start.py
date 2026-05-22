@@ -283,9 +283,11 @@ class Launcher:
         self._info(f"地图: {map_name or '(当前)'}, 区域: {os.path.basename(region_file)}")
 
         # RViz 先启动，确保静态地图订阅者就绪（避免错过 RTAB-Map 一次性发布）
-        self._ensure_rviz()
-        self._info("等待 RViz 就绪 (10s)...")
-        time.sleep(10.0)
+        # 非交互模式（测试脚本调用）跳过 RViz，无需等待
+        if not self._non_interactive:
+            self._ensure_rviz()
+            self._info("等待 RViz 就绪 (10s)...")
+            time.sleep(10.0)
 
         # 启动 navigation（RTAB-Map localization + Nav2）
         self._info("=== 纯定位覆盖 (localization:=true) ===")
