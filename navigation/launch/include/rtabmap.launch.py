@@ -69,21 +69,8 @@ def launch_setup(context):
             package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
             name='depth_to_scan',
             output='screen',
-            parameters=[{
-                'target_frame': 'base_footprint',
-                'transform_tolerance': 0.1,
-                'min_height': 0.02,   # 离地2cm以上(过滤地面)
-                'max_height': 0.30,   # 离地30cm以下(只关心低矮障碍物)
-                'angle_min': -1.57,   # -90度(覆盖前方半圆)
-                'angle_max': 1.57,    # +90度
-                'angle_increment': 0.0087,  # ~0.5度分辨率
-                'scan_time': 0.1,     # 10Hz
-                'range_min': 0.1,     # 10cm最小距离
-                'range_max': 3.0,     # 3m最大距离(深度相机可靠范围)
-                'use_inf': True,
-                'inf_epsilon': 1.0,
-                'use_sim_time': use_sim_time,
-            }],
+            parameters=[os.path.join(nav_share, 'config', 'pointcloud_to_laserscan_params.yaml'),
+                        {'use_sim_time': use_sim_time}],
             remappings=[
                 ('cloud_in', '/ascamera/camera_publisher/depth0/points'),
                 ('scan', '/scan_raw'),
