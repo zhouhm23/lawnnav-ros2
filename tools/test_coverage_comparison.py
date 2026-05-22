@@ -135,6 +135,17 @@ def _run_common(label, nav_cmd, pathcov_cmd, use_mapserver, costmap_wait, map_na
     if need_db:
         _restore_rtabmap_db(map_name)
         _info(f"rtabmap_db已恢复")
+        # 触发 RTAB-Map 从 .db 发布完整 grid_map
+        time.sleep(10.0)  # 等 RTAB-Map 加载 .db
+        _info("触发 RTAB-Map 发布 grid_map...")
+        subprocess.run(
+            f"{_source_cmd()} && "
+            f"ros2 service call /rtabmap/publish_map rtabmap_msgs/srv/PublishMap "
+            f'"{{global_map: true, optimized: true, graph_only: false}}"',
+            shell=True, executable='/bin/bash',
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {pathcov_cmd}"],
                            stdout=open(os.path.join(LOG_DIR, f"{PREFIX[label]}_pathcoverage.log"), "w"), stderr=subprocess.STDOUT,
                            preexec_fn=lambda: _preexec_fn("pathcov"), env=_ros_env())

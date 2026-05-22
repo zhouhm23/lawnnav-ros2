@@ -267,10 +267,9 @@ class Launcher:
         self._ok("建图模式就绪 — 在 RViz 中用 Publish Point 圈选区域开始建图")
 
     def start_coverage(self, map_name: str = "", region_name: str = "") -> None:
-        """纯定位覆盖: localization:=true + map_server 栅格地图。
+        """纯定位覆盖: localization:=true。
 
-        适用场景: localization 模式在你的环境中偶尔能成功时使用。
-        如果重定位一直失败，请用 `live` 命令。
+        RViz 先启动确保订阅者就绪 → 10s 后启动 navigation → 10s 后触发 RTAB-Map 发布 grid_map。
         """
         if self._current_mode == "coverage":
             self._warn("已在 coverage 模式，请先 stop")
@@ -283,18 +282,35 @@ class Launcher:
             return
         self._info(f"地图: {map_name or '(当前)'}, 区域: {os.path.basename(region_file)}")
 
-        # 启动纯定位 navigation
-        # RTAB-Map 的 grid_map 已在 rtabmap.launch.py 中 remap 到 /map，Nav2 static_layer 直接读取
-        # 不需要 map_server 发布静态 .pgm（.pgm 可能丢失 .db 中的完整障碍物信息）
+        # RViz 先启动，确保静态地图订阅者就绪（避免错过 RTAB-Map 一次性发布）
+        self._ensure_rviz()
+        self._info("等待 RViz 就绪 (10s)...")
+        time.sleep(10.0)
+
+        # 启动 navigation（RTAB-Map localization + Nav2）
         self._info("=== 纯定位覆盖 (localization:=true) ===")
         self._spawn("navigation",
                     "ros2 launch navigation rtabmap_navigation.launch.py localization:=true")
-        time.sleep(2.0)
-        self._ensure_rviz()
-        time.sleep(5.0)
+        self._info("等待 navigation 初始化 (10s)...")
+        time.sleep(10.0)
+
+        # 触发 RTAB-Map 从 .db 发布完整 grid_map
+        self._publish_rtabmap_map()
 
         self._current_mode = "coverage"
         self._launch_coverage_tools(region_file)
+
+    def _publish_rtabmap_map(self) -> None:
+        """调用 /rtabmap/publish_map 服务，从 .db 发布完整全局 grid_map。"""
+        self._info("触发 RTAB-Map 发布 grid_map...")
+        subprocess.run(
+            f"{self._source_cmd()} && "
+            f"ros2 service call /rtabmap/publish_map rtabmap_msgs/srv/PublishMap "
+            f'"{{global_map: true, optimized: true, graph_only: false}}"',
+            shell=True, executable='/bin/bash',
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
 
     def start_live(self, region_name: str = "") -> None:
         """建图模式直接覆盖: localization:=false，边建图边覆盖。
@@ -316,8 +332,8 @@ class Launcher:
             return
         self._info(f"区域: {os.path.basename(region_file)}, 模式: mapping (边建图边覆盖)")
 
-        # 等待地图积累（匹配用户手动流程: 建图后等 30s）
-        self._info("等待地图积累 30s...")
+        # 等待地图积累（匹配用户手动流程: 建图后等 10s）
+        self._info("等待地图积累 10s...")
         for i in range(6):
             time.sleep(5.0)
             self._info(f"  ... {25 - i*5}s")
@@ -342,18 +358,14 @@ class Launcher:
 
     def _launch_coverage_tools(self, region_file: str) -> None:
         """启动 path_coverage + evaluator → 等待节点就绪 → 发布区域。"""
-        # 等 30s 让 costmap 充分积累（匹配用户手动流程）
-        self._info("等待 costmap 稳定 (30s)...")
-        time.sleep(30.0)
-
         self._spawn("path_coverage",
                     "ros2 launch path_coverage path_coverage.launch.py")
         self._spawn("evaluator",
                     "ros2 launch coverage_evaluator coverage_evaluator.launch.py")
 
         # 等节点启动 + DDS 发现 + 订阅建立
-        self._info("等待节点就绪 (15s)...")
-        time.sleep(15.0)
+        self._info("等待节点就绪 (10s)...")
+        time.sleep(10.0)
 
         # 验证 path_coverage 仍在运行（未被 OOM 杀掉或启动崩溃）
         if not self._is_running("path_coverage"):
@@ -467,7 +479,7 @@ class Launcher:
         else:
             self._warn(f"{RTABMAP_DB} 不存在，跳过数据库保存")
 
-        # 2. 保存栅格地图 — RTAB-Map 已在 rtabmap.launch.py 中将 grid_map remap 到 /map
+        # 2. 保存栅格地图
         grid_path = os.path.join(MAP_BACKUP_DIR, name)
         self._info("保存栅格地图 (调用 map_saver_cli)...")
         try:
