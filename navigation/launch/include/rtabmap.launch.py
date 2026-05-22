@@ -29,7 +29,7 @@ def launch_setup(context):
             ('rgb/camera_info', '/ascamera/camera_publisher/rgb0/camera_info'),
             ('depth/image', '/ascamera/camera_publisher/depth0/image_raw'),
             ('scan', '/scan_raw'),  # 虚拟雷达→RTAB-Map ICP定位匹配
-            ('grid_map', '/rtabmap/grid_map'),  # RTAB-Map占据栅格（比pgm/yaml保真度高）
+            ('grid_map', '/map'),  # RTAB-Map占据栅格（比pgm/yaml保真度高）
             ('odom', '/odom'),
             ('imu', '/imu/data'),
             ('cloud_map', '/rtabmap/cloud_map'),
@@ -52,7 +52,11 @@ def launch_setup(context):
                            'RGBD/StartAtOrigin': 'false'}]
     
     return [
-        # rgbd_sync 已移除 — 纯扫描模式(subscribe_scan=true, subscribe_rgbd=false)不需要RGBD同步
+        Node(
+            package='rtabmap_sync', executable='rgbd_sync', output='screen',
+            parameters=[{'approx_sync':True, 'approx_sync_max_interval': 0.05, 'use_sim_time':use_sim_time, 'qos':qos}],
+            remappings=remappings),
+
         Node(
             package='rtabmap_slam', executable='rtabmap', output='screen',
             parameters=rtabmap_parameters,
