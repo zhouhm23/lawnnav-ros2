@@ -18,8 +18,8 @@ bash launcher/start.sh              # Shell 兼容包装
 > list                     ← 查看所有地图和区域
 
 > region my_area           ← 在 RViz 中 Publish Point 圈选新区域并保存
-> coverage test_map test_180x240  ← ⭐ 纯定位覆盖 (推荐，经测试90.4%覆盖率)
-> live test_180x240        ← 建图模式下直接覆盖 (备选方案)
+> coverage camera_map test_180x240   ← 纯定位覆盖
+> live test_180x240        ← 建图模式下直接覆盖
 
 > log [进程名]             ← 查看进程日志
 > status                   ← 查看进程状态

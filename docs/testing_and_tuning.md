@@ -658,6 +658,9 @@ Could not determine the type for the passed topic
 ---
 
 ### 5.21测试结果
-1.nav路径规划没考虑localcostmap
-2.python3 tools/radar_mapping.py radar_map因为没启动nav导致小车走不了，因为我建图是靠发布2d点让小车运动来建图
-3.相机覆盖时map没发布，应该是话题映射有问题，可能因为是不同类型
+1. （已修改未测试）nav路径规划没考虑localcostmap
+2. （已修改未测试）python3 tools/radar_mapping.py radar_map因为没启动nav导致小车走不了，因为我建图是靠发布2d点让小车运动来建图
+3. （测试发现原因并非这个）相机覆盖时map没发布，应该是话题映射有问题，可能因为是不同类型
+
+### 5.22测试结果
+1. （未解决）仅ros2 launch navigation rtabmap_navigation.launch.py localization:=true下mapData和map有数据，但数据只有第一帧；python3 launcher/start.py->coverage camera_map test_180x240下mapData和map没数据

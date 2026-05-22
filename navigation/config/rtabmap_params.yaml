@@ -26,8 +26,9 @@ rtabmap:
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
-    'subscribe_rgbd': true  # RGB+深度同步→RTAB-Map进行视觉SLAM定位（与Nav2障碍物检测走独立路径，可共存）
-    'subscribe_scan': false
+    'subscribe_rgbd': false  # RGB无数据，禁用RGBD模式
+    'subscribe_depth': false  # 显式禁用，防止与subscribe_rgbd冲突
+    'subscribe_scan': true  # 纯扫描模式：虚拟雷达做ICP定位（pointcloud_to_laserscan→/scan_raw）
     'Reg/Strategy': '1'
     'Reg/Force3DoF': 'true'
     # Params previously hardcoded in launch file, now centralized here:
