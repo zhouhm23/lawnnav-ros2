@@ -3,7 +3,7 @@ path_coverage:
     # 全局坐标系，默认map（规划参考坐标系）
     global_frame: "map"
     
-    # 每条路径的宽度（实际为半径）
+    # 每条路径的宽度
     robot_width: 0.171
     
     # 认为可通过的最大代价值：如果一个单元格的代价值 ≤ 70，算法就认为这个地方是空地，可以规划路径穿过。
@@ -26,9 +26,9 @@ path_coverage:
 
     # 按用户区域掩膜裁剪后，允许向外补偿的距离（米）。
     # 在周边无障碍时适度外扩，提升边界覆盖连续性。
-    polygon_expand: 0.05
+    polygon_expand: 0.22
 
-    # 覆盖线距边界的内缩距离（米）。必须 ≥ robot_radius(0.15)，否则 waypoint 落入致命区。
+    # 覆盖线距边界的内缩距离（米）。必须 ≥ robot_radius(0.11)，否则 waypoint 落入致命区。
     coverage_clearance: 0.11
 
     # 外扩圈（polygon_expand）可接受的最大代价值。

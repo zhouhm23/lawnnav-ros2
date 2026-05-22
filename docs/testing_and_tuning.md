@@ -664,4 +664,7 @@ Could not determine the type for the passed topic
 
 ### 5.22测试结果
 1. （已解决）仅ros2 launch navigation rtabmap_navigation.launch.py localization:=true下mapData和map有数据，但数据只有第一帧；python3 launcher/start.py->coverage camera_map test_180x240下mapData和map没数据
-2. （未解决）车对边缘覆盖效果差，可能外扩参数设置不合理，也可能刹车距离太大->已经有robotmodel和膨胀层，安全距离不用太大
+2. （已解决）车对边缘覆盖效果差，可能外扩参数设置不合理，也可能刹车距离太大->已经有robotmodel和膨胀层，安全距离不用太大
+3. （未解决）python3 tools/test_coverage_comparison.py --mode c不需要等待rviz启动
+4. （未解决）车不运动，这绝对因为刚才配置控制器不对，我已经回退了
+5. （未解决）nav路径规划没考虑localcostmap，导致路径规划进障碍物里，然后避障系统又阻止车行走

@@ -8,7 +8,7 @@ path_coverage:
     base_frame: "base_footprint"
     num_points: 2
     min_wp_dist: 0.2
-    polygon_expand: 0.05
+    polygon_expand: 0.0
     coverage_clearance: 0.0
     expand_max_non_lethal: 0
     drive_max_non_lethal: 0
