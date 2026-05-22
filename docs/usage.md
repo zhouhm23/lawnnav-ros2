@@ -37,7 +37,16 @@ rm -f /home/ubuntu/.ros/rtabmap.db
 ros2 launch navigation rtabmap_navigation.launch.py localization:=false
 ros2 launch navigation rtabmap_navigation.launch.py localization:=true
 
+# 雷达建图和保存
 python3 tools/radar_mapping.py radar_map
+
+# 手动发布地图（相机建图不能用这个，因为效果很差）
+ros2 run nav2_map_server map_server --ros-args --param yaml_filename:=/home/ubuntu/.ros/maps/camera_map.yaml
+ros2 lifecycle set /map_server configure # 配置节点
+ros2 lifecycle set /map_server activate # 激活节点（关键步骤！否则不发布数据）
+
+# 手动发布rtabmap地图（需要启动nav后）
+ros2 service call /rtabmap/publish_map rtabmap_msgs/srv/PublishMap "{global_map: true, optimized: true, graph_only: false}"
 ```
 
 ### 终端 2：RViz

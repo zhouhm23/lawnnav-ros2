@@ -160,7 +160,7 @@ local_costmap:
           raytrace_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: /rtabmap/grid_map  # RTAB-Map占据栅格（比pgm/yaml保真，建图67格→导航仍67格）
+        map_topic: /map  # RTAB-Map占据栅格（比pgm/yaml保真，建图67格→导航仍67格）
         map_subscribe_transient_local: True
       always_send_full_costmap: True
   local_costmap_rclcpp_node:
@@ -186,7 +186,7 @@ global_costmap:
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: /rtabmap/grid_map  # RTAB-Map占据栅格（比pgm/yaml保真）
+        map_topic: /map  # RTAB-Map占据栅格（比pgm/yaml保真）
         map_subscribe_transient_local: True  # 一般建议全局代价地图设为 True
       obstacle_layer: 
         plugin: "nav2_costmap_2d::ObstacleLayer"
