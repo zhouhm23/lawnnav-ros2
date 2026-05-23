@@ -1,6 +1,7 @@
 # 这个是相机+雷达建图的参数文件，纯相机建图的参数文件是 rtabmap_params.yaml，雷达相关参数已启用
 rtabmap:
   ros__parameters:
+    # 'odom_frame_id': '/odom'
     # RTAB-Map parameters (strings are safer for packaged binary)
     'Grid/RangeMin': '0.04'
     'Grid/RangeMax': '10.0'
@@ -13,29 +14,43 @@ rtabmap:
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'
     'Grid/3D': 'true'
-    'Grid/FromDepth': 'false'  # false=使用雷达数据建图，true=只用深度图
+    'Grid/FromDepth': 'false'  # 如果为true，则从深度相机生成的云层中创建占用网格。如果为false，则从激光扫描中生成占领网格
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
     'proj_max_ground_height': '0.20'
     'proj_max_ground_angle': '15'
-    'RGBD/ProximityBySpace': 'true'
+    'RGBD/ProximityBySpace': 'true' # 根据机器人在地图中的位置，寻找局部环形闭合。这在机器人朝反方向回来时非常有用。由于摄像头朝后，无法找到全局环形闭合点。所以利用位置和之前添加的激光扫描到地图上，我们用ICP找到变换。
     'RGBD/ProximityPathMaxNeighbors': '5'
-    'RGBD/NeighborLinkRefining': 'false'
-    'Rtabmap/DetectionRate': '8'
-    'RGBD/LinearUpdate': '0.10'
-    'RGBD/AngularUpdate': '0.10'
+    'RGBD/NeighborLinkRefining': 'false' # 使用ICP对输入lidar主题进行正确的里程测量。
+    # 'RGBD/OptimizeFromGraphEnd': 'false' # 设置为false（默认为false），在循环关闭时，图形将从地图中的第一个姿势开始优化。TF /map -> /odom会在这种情况下改变。当设置为false时，图形将从添加到地图中的最新节点开始优化，而不是第一个节点。通过从最后一个节点开始优化，最后一个姿势保持它的值，而所有之前的姿势都会根据它来修正（所以/odom和/map总是匹配在一起）
+    'Rtabmap/DetectionRate': '8' # Rate (Hz) at which new nodes are added to map
+    'RGBD/LinearUpdate': '0.10' # 机器人应该移动来更新地图（如果不是0的话）
+    'RGBD/AngularUpdate': '0.10' # 机器人应该移动更新地图（如果不是0，则为0）
     'Vis/MaxFeatures': '800'
+    
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
-    'odom_sensor_sync': true  # 各传感器独立匹配 odom，不等成对
     'queue_size': 30
     # rgbd包含d，不能同时为真
     'subscribe_rgbd': true
     'subscribe_depth': false
-    'subscribe_scan': true  # 纯扫描模式：虚拟雷达做ICP定位（pointcloud_to_laserscan→/scan_raw）
-    'Reg/Strategy': '1'
-    'Reg/Force3DoF': 'true'
+    'subscribe_scan': true
+    'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
+    'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
     'grid_size': '20'
-    'Grid/Sensor': 'true'
+    'Grid/Sensor': 'false' # Set to false to use the laser scan for the occupancy grid instead of the depth camera
+
+    # Loop Closure Detection
+    # 'Kp/DetectorStrategy': '0' # 0=SURF 1=SIFT 2=ORB 3=FAST/FREAK 4=FAST/BRIEF 5=GFTT/FREAK 6=GFTT/BRIEF 7=BRISK 8=GFTT/ORB 9=KAZE
+    # 'Kp/MaxFeatures': '800' # Maximum visual words per image (bag-of-words)
+
+    # 'SURF/HessianThreshold': '100' # Used to extract more or less SURF features
+
+    # 'Vis/MinInliers': '15' # Minimum visual inliers to accept loop closure
+
+    # 'Mem/NotLinkedNodesKept': 'false' # Set to false to avoid saving data when robot is not moving
+
+    # 'Icp/VoxelSize': '0.05' # 扫描在做ICP之前被过滤到5厘米的体元
+    # 'Icp/MaxCorrespondenceDistance': '0.1' # ICP注册时点之间的最大距离

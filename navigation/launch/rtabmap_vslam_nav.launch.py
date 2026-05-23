@@ -41,7 +41,7 @@ def launch_setup(context):
     map_name = LaunchConfiguration('map', default='').perform(context)
     robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
-    localization = LaunchConfiguration('localization', default='true').perform(context)
+    localization = LaunchConfiguration('localization', default='false').perform(context)
     publish_map = LaunchConfiguration('publish_map', default='false')
     map_db = LaunchConfiguration('map_db', default='').perform(context)
 
