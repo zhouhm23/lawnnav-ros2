@@ -699,3 +699,16 @@ fix：目前仅融合方案和单雷达正常，单视觉失败
    使用 `slam_toolbox` 建图时，需要人工遥控移动机器人；完成后通过命令保存为 `pgm` 地图文件。纯导航阶段则通过 `map_server` 加载并发布该 `pgm` 地图，不得在导航时同时运行建图节点。详见 `docs/usage.md` 第44行。
 4. **传感器组合与代价地图**  
    RTAB-Map 在建图阶段可灵活组合雷达、视觉或两者并用，只需修改 YAML 配置中的订阅话题即可。导航时若需要让深度相机参与代价地图构建，可使用 `pointcloud_to_laserscan` 将点云转为 `/scan`，与真实雷达统一输入到 Nav2 的代价地图中。
+
+17:50 fix：三种方案基本功能正常，但有些细节需要优化
+# (a) 单相机
+ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 (localization:=false)
+ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true # 导航
+
+# (b) 单雷达
+ros2 launch slam slam_toolbox_lidar_slam.launch.py
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py
+
+# (c) 视觉+雷达
+ros2 launch navigation rtabmap_vslam_nav.launch.py                    # 建图 (localization:=false)
+ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
