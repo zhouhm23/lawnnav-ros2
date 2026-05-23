@@ -119,12 +119,22 @@ def process_session(log_root: str, launch_dir: str, keep_info: bool = False) -> 
         return 0
 
     out_path = os.path.join(launch_dir, 'launch_simplify.log')
-    groups = []
+    groups = []           # (filename, line, count)
+    cur_file = None
     cur_line = None
     cur_skel = None
     cur_cnt = 0
 
+    def _flush():
+        nonlocal cur_line, cur_skel, cur_cnt
+        if cur_line is not None and cur_file is not None:
+            groups.append((cur_file, cur_line, cur_cnt))
+        cur_line = None
+        cur_skel = None
+        cur_cnt = 0
+
     for fpath in log_files:
+        fname = os.path.basename(fpath)
         try:
             with open(fpath, 'r', errors='replace') as f:
                 for raw in f:
@@ -138,26 +148,33 @@ def process_session(log_root: str, launch_dir: str, keep_info: bool = False) -> 
                         pass
                     else:
                         continue
+
+                    # 切换文件时强制分段
+                    if fname != cur_file:
+                        _flush()
+                        cur_file = fname
+
                     sk = skeleton(c)
                     if sk == cur_skel:
                         cur_line = c
                         cur_cnt += 1
                     else:
-                        if cur_line is not None:
-                            groups.append((cur_line, cur_cnt))
+                        _flush()
                         cur_line = c
                         cur_skel = sk
                         cur_cnt = 1
         except OSError:
             pass
 
-    if cur_line is not None:
-        groups.append((cur_line, cur_cnt))
+    _flush()
 
-    # 输出时首行加来源文件数
     with open(out_path, 'w') as out:
-        out.write(f'# 来源: {len(log_files)} 个日志文件 (launch PID={launch_pid}, +{PID_WINDOW})\n')
-        for line, cnt in groups:
+        out.write(f'# 来源: {len(log_files)} 个日志文件 (launch PID={launch_pid}, +{PID_WINDOW})\n\n')
+        last_file = None
+        for fname, line, cnt in groups:
+            if fname != last_file:
+                out.write(f'### {fname}\n')
+                last_file = fname
             out.write(line + '\n')
             if cnt > 1:
                 out.write(f'× {cnt}\n')
