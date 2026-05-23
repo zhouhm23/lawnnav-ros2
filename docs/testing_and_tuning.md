@@ -671,15 +671,20 @@ Could not determine the type for the passed topic
 ### 5.23
 13.50 重构了三种slam和nav方案：
 ```
+sudo ~/.stop_ros.sh
+export ROS_LOG_DIR=~/ros2_ws/src/logs/ros
 # (a) 单相机
-ros2 launch slam rtabmap_camera_slam.launch.py # 
-ros2 launch navigation rtabmap_camera_nav.launch.py # 
+ros2 launch slam rtabmap_camera_slam.launch.py # 启动失败，无话题logs/ros/2026-05-23-06-33-57-925659-raspberrypi-602294/launch_simplify.log
+ros2 launch navigation rtabmap_camera_nav.launch.py # 启动失败，无话题logs/ros/2026-05-23-06-34-44-918013-raspberrypi-605271/launch_simplify.log
 
 # (b) 单雷达
-ros2 launch slam slam_toolbox_lidar_slam.launch.py # 成功
-ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 
+ros2 launch slam slam_toolbox_lidar_slam.launch.py # 启动成功logs/ros/2026-05-23-06-35-29-329743-raspberrypi-609050/launch_simplify.log
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 启动成功，但导航异常logs/ros/2026-05-23-06-36-32-918458-raspberrypi-613668/launch_simplify.log
 
 # (c) 视觉+雷达
-ros2 launch slam rtabmap_vslam_slam.launch.py
-ros2 launch navigation rtabmap_vslam_nav.launch.py
+ros2 launch slam rtabmap_vslam_slam.launch.py # 出现rgbd和雷达射线，但map没构建logs/ros/2026-05-23-06-37-25-358675-raspberrypi-617434/launch_simplify.log
+ros2 launch navigation rtabmap_vslam_nav.launch.py # rgbd生成了map，但雷达射线不能logs/ros/2026-05-23-06-38-37-261785-raspberrypi-622436/launch_simplify.log
+
+python3 tools/log_simplify.py
+# 以上结果均为我通过rviz观察所得
 ```
