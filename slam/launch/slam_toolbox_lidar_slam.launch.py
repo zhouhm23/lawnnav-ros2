@@ -1,4 +1,20 @@
-# DEPRECATED: replaced by slam_toolbox_lidar_slam.launch.py — 保留至测试通过后删除 (see docs/deprecation_list.md)
+#!/usr/bin/env python3
+"""
+slam_toolbox_lidar_slam.launch.py — (b) 单雷达 slam_toolbox 建图
+
+TF 树:
+  map → odom → base_footprint → base_link
+              → lidar_frame
+
+  提供者:
+    map→odom:      slam_toolbox (laser scan matching)
+    odom→base:     controller (robot_localization / odometry)
+    base→lidar:    robot_state_publisher (URDF)
+
+用法:
+    ros2 launch slam slam_toolbox_lidar_slam.launch.py
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 
@@ -7,6 +23,7 @@ from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
+
 
 def launch_setup(context):
     compiled = os.environ.get('need_compile', 'False')
@@ -39,46 +56,47 @@ def launch_setup(context):
         launch_arguments={
             'sim': sim,
             'master_name': master_name,
-            'robot_name': robot_name
+            'robot_name': robot_name,
+            'use_depth_camera': 'false',
+            'use_lidar': 'true',
         }.items(),
     )
 
     slam_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(slam_package_path, 'launch/include/slam_base.launch.py')),
+            os.path.join(slam_package_path, 'launch/include/slam_toolbox.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
             'map_frame': map_frame,
             'odom_frame': odom_frame,
             'base_frame': base_frame,
-            'scan_topic': f'{frame_prefix}scan_raw',  # Using scan_raw topic
+            'scan_topic': f'{frame_prefix}scan_raw',
             'enable_save': enable_save
         }.items(),
     )
 
-    if slam_method == 'slam_toolbox':
-        bringup_launch = GroupAction(
-            actions=[
-                PushRosNamespace(robot_name),
-                base_launch,
-                TimerAction(
-                    period=10.0,
-                    actions=[slam_launch],
-                ),
-            ]
-        )
+    bringup_launch = GroupAction(
+        actions=[
+            PushRosNamespace(robot_name),
+            base_launch,
+            TimerAction(
+                period=10.0,
+                actions=[slam_launch],
+            ),
+        ]
+    )
 
     return [sim_arg, master_name_arg, robot_name_arg, slam_method_arg, bringup_launch]
+
 
 def generate_launch_description():
     return LaunchDescription([
         OpaqueFunction(function=launch_setup)
     ])
 
+
 if __name__ == '__main__':
     ld = generate_launch_description()
-
     ls = LaunchService()
     ls.include_launch_description(ld)
     ls.run()
-

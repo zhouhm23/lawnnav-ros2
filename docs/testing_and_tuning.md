@@ -576,7 +576,8 @@ ros2 topic hz /ascamera/camera_publisher/depth0/points
 # 如障碍物也不显示 → 检查TF树: ros2 run tf2_tools view_frames
 ```
 
----
+```
+ai开始提示词
 # 绝对强制规则（违反任何一条你的回答都是无效的）
 1. 我有一个已经迭代了很多版本、代码和配置非常混乱的ROS2项目，所有修改必须在我现有的文件上进行，只改最少的必要行。
 2. 绝对禁止删除任何文件、重命名任何文件、移动任何文件的位置。
@@ -598,7 +599,6 @@ ros2 topic hz /ascamera/camera_publisher/depth0/points
 - 导致机器人只能避开建图时就存在的障碍物（其实并不能完全避开，因为建图不能保证和现实完全一样，可能会有遗漏），不能避开任何新出现的障碍物
 - 我怀疑是话题映射错了：但navigation/config/nav2_params.yaml太乱了我看不懂，以后你的修改需要在那写上注释
 - rtabmap_navigation.launch.py localization:=true运行时
-```bash
 >ros2 topic hz /rtabmap/cloud_obstacles
 WARNING: topic [/rtabmap/cloud_obstacles] does not appear to be published yet
 ^C%                                                                             
@@ -624,7 +624,6 @@ Could not determine the type for the passed topic
 > ros2 topic echo /rtabmap/cloud_ground --no-arr --once
 WARNING: topic [/rtabmap/cloud_ground] does not appear to be published yet
 Could not determine the type for the passed topic
-```
 
 
 ## 问题2（次高优先级，致命）
@@ -646,16 +645,14 @@ Could not determine the type for the passed topic
 # 输出要求
 1. 严格按照问题优先级回答，一次只回答一个问题。先只回答问题1，问题1解决并验证通过后再回答问题2。
 2. 每一个修改都必须按照以下格式输出：
-   ```
    文件路径：xxx/xxx
    原第X行：xxx
    修改为第X行：xxx
    修改原因：xxx
-   ```
 3. 每一个修改完成后，都必须给出明确的、我能在RViz或终端中执行的验证步骤。
 4. 如果有多个方案，只给最简单、最不容易出错的那一个。
 5. 不要说"你应该"、"你可以"，直接说"修改xx文件的第x行"。
----
+```
 
 ### 5.21测试结果
 1. （已修改测试未通过）nav路径规划没考虑localcostmap，导致路径规划进障碍物里，然后避障系统又阻止车行走
@@ -670,3 +667,19 @@ Could not determine the type for the passed topic
 5. （已解决）nav路径规划没考虑localcostmap，导致路径规划进障碍物里，然后避障系统又阻止车行走
 6. （未解决）实时避障不能检测到低矮障碍物，车底盘高才3cm，相机高10cm本可以尝试避开高于3cm的障碍物（2D雷达原理上就不行，因为它高16cm）
 7. （未解决）相机定位模式下本地代价图精度非常差，有时候会大于实际，导致车覆盖率低（这种情况多）；有时候又小于实际，导致车碰障（这种情况少，目前撞2次）
+
+### 5.23
+13.50 重构了三种slam和nav方案：
+```
+# (a) 单相机
+ros2 launch slam rtabmap_camera_slam.launch.py # 
+ros2 launch navigation rtabmap_camera_nav.launch.py # 
+
+# (b) 单雷达
+ros2 launch slam slam_toolbox_lidar_slam.launch.py # 成功
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 
+
+# (c) 视觉+雷达
+ros2 launch slam rtabmap_vslam_slam.launch.py
+ros2 launch navigation rtabmap_vslam_nav.launch.py
+```

@@ -25,9 +25,9 @@ def launch_setup(context):
     remappings=[
             ('/tf', 'tf'),
             ('/tf_static', 'tf_static'),
-            ('rgb/image', '/ascamera/camera_publisher/rgb0/image'),
-            ('rgb/camera_info', '/ascamera/camera_publisher/rgb0/camera_info'),
-            ('depth/image', '/ascamera/camera_publisher/depth0/image_raw'),
+            ('rgb/image', '/rgb/image'),
+            ('rgb/camera_info', '/rgb/camera_info'),
+            ('depth/image', '/depth/image'),
             ('scan', '/scan_raw'),  # 虚拟雷达→RTAB-Map ICP定位匹配
             ('grid_map', '/map'),  # RTAB-Map占据栅格（比pgm/yaml保真度高）
             ('odom', '/odom'),
@@ -38,7 +38,7 @@ def launch_setup(context):
 
     # path to optional params file in navigation package
     nav_share = get_package_share_directory('navigation')
-    rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params.yaml')
+    rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params_camera.yaml')
 
     # Logic for localization vs mapping
     # Localization: Mem/IncrementalMemory=false, Mem/InitWMWithAllNodes=true
@@ -72,7 +72,7 @@ def launch_setup(context):
             parameters=[os.path.join(nav_share, 'config', 'pointcloud_to_laserscan_params.yaml'),
                         {'use_sim_time': use_sim_time}],
             remappings=[
-                ('cloud_in', '/ascamera/camera_publisher/depth0/points'),
+                ('cloud_in', '/depth/points'),
                 ('scan', '/scan_raw'),
             ]),
     ]

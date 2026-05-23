@@ -1,12 +1,29 @@
-# DEPRECATED: replaced by rtabmap_camera_nav.launch.py — 保留至测试通过后删除 (see docs/deprecation_list.md)
+#!/usr/bin/env python3
+"""
+rtabmap_vslam_nav.launch.py — (c) 视觉+雷达 RTAB-VSLAM 导航/覆盖（恢复出厂）
+
+定位方式: RTAB-Map localization (visual + laser ICP), 跳过 AMCL
+代价图输入: /scan_raw (真实激光雷达 + pointcloud_to_laserscan 虚拟雷达)
+
+TF 树:
+  map → odom → base_footprint → base_link
+                                → lidar_frame
+                                → depth_cam → depth_cam_optical
+
+用法:
+    ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=false   # 建图
+    ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true    # 纯定位
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 
-from launch_ros.actions import PushRosNamespace, Node
+from launch_ros.actions import PushRosNamespace
 from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
+
 
 def launch_setup(context):
     compiled = os.environ['need_compile']
@@ -31,32 +48,28 @@ def launch_setup(context):
 
     use_sim_time = 'true' if sim == 'true' else 'false'
     use_namespace = 'true' if robot_name != '/' else 'false'
-    frame_prefix = '' if robot_name == '/' else '%s/'%robot_name
-    topic_prefix = '' if robot_name == '/' else '/%s'%robot_name
-    map_frame = '{}map'.format(frame_prefix)
-    odom_frame = '{}odom'.format(frame_prefix)
-    base_frame = '{}base_footprint'.format(frame_prefix)
-    depth_camera_topic = '/ascamera/camera_publisher/depth0/image_raw'.format(topic_prefix)
-    depth_camera_info = '/ascamera/camera_publisher/rgb0/camera_info'.format(topic_prefix)
-    rgb_camera_topic = '/ascamera/camera_publisher/rgb0/image'.format(topic_prefix)
-    odom_topic = '{}/odom'.format(topic_prefix)
-    scan_topic = '{}/scan_raw'.format(topic_prefix)
+    frame_prefix = '' if robot_name == '/' else '%s/' % robot_name
+    topic_prefix = '' if robot_name == '/' else '/%s' % robot_name
 
     base_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
+        PythonLaunchDescriptionSource(
+            os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
         launch_arguments={
             'sim': sim,
             'master_name': master_name,
             'robot_name': robot_name,
+            'use_depth_camera': 'true',
+            'use_lidar': 'true',
             'action_name': 'horizontal',
         }.items(),
     )
-    
+
     navigation_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
+        PythonLaunchDescriptionSource(
+            os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params.yaml'),
+            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params_vslam.yaml'),
             'namespace': robot_name,
             'use_namespace': use_namespace,
             'autostart': 'true',
@@ -66,7 +79,7 @@ def launch_setup(context):
 
     rtabmap_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(navigation_package_path, 'launch/include/rtabmap.launch.py')),
+            os.path.join(navigation_package_path, 'launch/include/rtabmap_vslam_nav.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
             'localization': localization,
@@ -74,28 +87,28 @@ def launch_setup(context):
     )
 
     bringup_launch = GroupAction(
-     actions=[
-         PushRosNamespace(robot_name),
-         base_launch,
-         TimerAction(
-             period=10.0,  # 延时等待其它节点启动好(delay for enabling other nodes)
-             actions=[navigation_launch],
-         ),
-         rtabmap_launch
-      ]
+        actions=[
+            PushRosNamespace(robot_name),
+            base_launch,
+            TimerAction(
+                period=10.0,
+                actions=[navigation_launch],
+            ),
+            rtabmap_launch
+        ]
     )
 
     return [sim_arg, master_name_arg, robot_name_arg, localization_arg, bringup_launch]
 
+
 def generate_launch_description():
     return LaunchDescription([
-        OpaqueFunction(function = launch_setup)
+        OpaqueFunction(function=launch_setup)
     ])
 
-if __name__ == '__main__':
-    # 创建一个LaunchDescription对象(create a LaunchDescription object)
-    ld = generate_launch_description()
 
+if __name__ == '__main__':
+    ld = generate_launch_description()
     ls = LaunchService()
     ls.include_launch_description(ld)
     ls.run()

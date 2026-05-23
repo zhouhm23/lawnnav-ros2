@@ -1,3 +1,4 @@
+# DEPRECATED: replaced by rtabmap_camera_slam.launch.py — 保留至测试通过后删除 (see docs/deprecation_list.md)
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import PushRosNamespace

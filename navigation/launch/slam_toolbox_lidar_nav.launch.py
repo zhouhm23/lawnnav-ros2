@@ -1,4 +1,18 @@
-# DEPRECATED: replaced by slam_toolbox_lidar_nav.launch.py — 保留至测试通过后删除 (see docs/deprecation_list.md)
+#!/usr/bin/env python3
+"""
+slam_toolbox_lidar_nav.launch.py — (b) 单雷达 slam_toolbox + AMCL 导航/覆盖
+
+定位方式: AMCL (adaptive Monte Carlo localization) + PGM/YAML 地图
+代价图输入: /scan_raw (真实激光雷达)
+
+TF 树:
+  map → odom → base_footprint → base_link
+              → lidar_frame
+
+用法:
+    ros2 launch navigation slam_toolbox_lidar_nav.launch.py map:=map_01
+"""
+
 import os
 from ament_index_python.packages import get_package_share_directory
 
@@ -7,6 +21,7 @@ from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
+
 
 def launch_setup(context):
     compiled = os.environ['need_compile']
@@ -31,22 +46,26 @@ def launch_setup(context):
 
     use_sim_time = 'true' if sim == 'true' else 'false'
     use_namespace = 'true' if robot_name != '/' else 'false'
-    
+
     base_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
+        PythonLaunchDescriptionSource(
+            os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
         launch_arguments={
             'sim': sim,
             'master_name': master_name,
-            'robot_name': robot_name
+            'robot_name': robot_name,
+            'use_depth_camera': 'false',
+            'use_lidar': 'true',
         }.items(),
     )
-    
+
     navigation_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
+        PythonLaunchDescriptionSource(
+            os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
             'map': os.path.join(slam_package_path, 'maps', map_name + '.yaml'),
-            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params.yaml'),
+            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params_lidar.yaml'),
             'namespace': robot_name,
             'use_namespace': use_namespace,
             'autostart': 'true',
@@ -55,27 +74,27 @@ def launch_setup(context):
     )
 
     bringup_launch = GroupAction(
-     actions=[
-         PushRosNamespace(robot_name),
-         base_launch,
-         TimerAction(
-             period=10.0,  # 延时等待其它节点启动好(delay for enabling other nodes)
-             actions=[navigation_launch],
-         ),
-      ]
+        actions=[
+            PushRosNamespace(robot_name),
+            base_launch,
+            TimerAction(
+                period=10.0,
+                actions=[navigation_launch],
+            ),
+        ]
     )
 
     return [sim_arg, map_name_arg, master_name_arg, robot_name_arg, use_teb_arg, bringup_launch]
 
+
 def generate_launch_description():
     return LaunchDescription([
-        OpaqueFunction(function = launch_setup)
+        OpaqueFunction(function=launch_setup)
     ])
 
-if __name__ == '__main__':
-    # 创建一个LaunchDescription对象(create a LaunchDescription object)
-    ld = generate_launch_description()
 
+if __name__ == '__main__':
+    ld = generate_launch_description()
     ls = LaunchService()
     ls.include_launch_description(ld)
     ls.run()
