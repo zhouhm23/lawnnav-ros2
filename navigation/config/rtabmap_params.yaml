@@ -1,3 +1,4 @@
+# 这个是单纯相机建图的参数文件，雷达相关参数已注释掉
 rtabmap:
   ros__parameters:
     # RTAB-Map parameters (strings are safer for packaged binary)
@@ -12,6 +13,7 @@ rtabmap:
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'
     'Grid/3D': 'true'
+    'Grid/FromDepth': 'true'  # false=使用雷达数据建图，true=只用深度图
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
     'proj_max_ground_height': '0.20'

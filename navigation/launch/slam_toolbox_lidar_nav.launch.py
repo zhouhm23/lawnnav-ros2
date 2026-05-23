@@ -33,7 +33,7 @@ def launch_setup(context):
         navigation_package_path = '/home/ubuntu/ros2_ws/src/navigation'
 
     sim = LaunchConfiguration('sim', default='false').perform(context)
-    map_name = LaunchConfiguration('map', default='map_01').perform(context)
+    map_name = LaunchConfiguration('map', default='').perform(context)
     robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
     use_teb = LaunchConfiguration('use_teb', default='false').perform(context)
@@ -59,12 +59,20 @@ def launch_setup(context):
         }.items(),
     )
 
+    # map: 空=无地图, 绝对路径=直接用, 名称=从 slam/maps/ 拼接
+    if not map_name:
+        map_path = ''
+    elif os.path.isabs(map_name):
+        map_path = map_name
+    else:
+        map_path = os.path.join(slam_package_path, 'maps', map_name + '.yaml')
+
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'map': os.path.join(slam_package_path, 'maps', map_name + '.yaml'),
+            'map': map_path,
             'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params_lidar.yaml'),
             'namespace': robot_name,
             'use_namespace': use_namespace,

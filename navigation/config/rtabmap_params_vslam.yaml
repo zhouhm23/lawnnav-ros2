@@ -1,3 +1,4 @@
+# 这个是相机+雷达建图的参数文件，纯相机建图的参数文件是 rtabmap_params.yaml，雷达相关参数已启用
 rtabmap:
   ros__parameters:
     # RTAB-Map parameters (strings are safer for packaged binary)
@@ -12,6 +13,7 @@ rtabmap:
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'
     'Grid/3D': 'true'
+    'Grid/FromDepth': 'false'  # false=使用雷达数据建图，true=只用深度图
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
     'proj_max_ground_height': '0.20'
@@ -25,6 +27,7 @@ rtabmap:
     'Vis/MaxFeatures': '800'
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
+    'odom_sensor_sync': true  # 各传感器独立匹配 odom，不等成对
     'queue_size': 30
     # rgbd包含d，不能同时为真
     'subscribe_rgbd': true

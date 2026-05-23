@@ -17,12 +17,15 @@ TF 树:
 
 import os
 from ament_index_python.packages import get_package_share_directory
+import shutil
+from pathlib import Path
 
 from launch_ros.actions import PushRosNamespace
 from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction, ExecuteProcess
+from launch.conditions import IfCondition
 
 
 def launch_setup(context):
@@ -39,12 +42,24 @@ def launch_setup(context):
     robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
     localization = LaunchConfiguration('localization', default='true').perform(context)
+    publish_map = LaunchConfiguration('publish_map', default='false')
+    map_db = LaunchConfiguration('map_db', default='').perform(context)
+
+    # 地图 db 处理
+    rtabmap_db = str(Path.home() / '.ros' / 'rtabmap.db')
+    if map_db:
+        shutil.copy(map_db, rtabmap_db)
+    else:
+        if os.path.exists(rtabmap_db):
+            os.remove(rtabmap_db)
 
     sim_arg = DeclareLaunchArgument('sim', default_value=sim)
     map_name_arg = DeclareLaunchArgument('map', default_value=map_name)
     master_name_arg = DeclareLaunchArgument('master_name', default_value=master_name)
     robot_name_arg = DeclareLaunchArgument('robot_name', default_value=robot_name)
     localization_arg = DeclareLaunchArgument('localization', default_value=localization)
+    publish_map_arg = DeclareLaunchArgument('publish_map', default_value=publish_map)
+    map_db_arg = DeclareLaunchArgument('map_db', default_value=map_db)
 
     use_sim_time = 'true' if sim == 'true' else 'false'
     use_namespace = 'true' if robot_name != '/' else 'false'
@@ -79,7 +94,7 @@ def launch_setup(context):
 
     rtabmap_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(navigation_package_path, 'launch/include/rtabmap_vslam_nav.launch.py')),
+            os.path.join(navigation_package_path, 'launch/include/rtabmap_vslam.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
             'localization': localization,
@@ -94,11 +109,23 @@ def launch_setup(context):
                 period=10.0,
                 actions=[navigation_launch],
             ),
-            rtabmap_launch
+            rtabmap_launch,
+            TimerAction(
+                period=15.0,  # 等 RTAB-Map 完全启动后发布地图
+                actions=[
+                    ExecuteProcess(
+                        cmd=['ros2', 'service', 'call', '/rtabmap/publish_map',
+                             'rtabmap_msgs/srv/PublishMap',
+                             '{global_map: true, optimized: true, graph_only: false}'],
+                        output='screen',
+                    )
+                ],
+                condition=IfCondition(publish_map),
+            ),
         ]
     )
 
-    return [sim_arg, master_name_arg, robot_name_arg, localization_arg, bringup_launch]
+    return [sim_arg, master_name_arg, robot_name_arg, localization_arg, publish_map_arg, map_db_arg, bringup_launch]
 
 
 def generate_launch_description():

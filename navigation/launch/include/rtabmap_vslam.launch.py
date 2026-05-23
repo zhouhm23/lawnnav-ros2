@@ -68,8 +68,7 @@ def launch_setup(context):
             parameters=rtabmap_parameters,
             remappings=remappings),
 
-        # 虚拟雷达节点：深度相机点云 → LaserScan → /scan_raw
-        # Nav2 代价图和 RTAB-Map 都读 /scan_raw，底层传感器透明
+        # 虚拟雷达：深度相机点云 → LaserScan → /scan_raw（与真实雷达互补）
         Node(
             package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
             name='depth_to_scan',
