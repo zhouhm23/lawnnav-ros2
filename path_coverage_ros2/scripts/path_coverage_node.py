@@ -53,6 +53,14 @@ from path_coverage.checkpoint import (
     register_signal_handlers, CHECKPOINT_FILE,
 )
 
+# GoalTracker: sys.path injection for scripts/test/ module
+import sys as _sys
+_scripts_test_dir = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'test')
+if _scripts_test_dir not in _sys.path:
+    _sys.path.insert(0, _scripts_test_dir)
+from goal_tracker import GoalTracker
+
 
 # Keep for backward compatibility; execution-stage cost filtering now uses
 # `costmap_max_non_lethal` directly to match decomposition-stage logic.
@@ -173,6 +181,9 @@ class MapDrive(Node):
 		self._heartbeat_timer = self.create_timer(15.0, self._heartbeat_callback)
 		self._coverage_start_time = None
 		self._cover_state = "idle"
+
+		# 目标不可达率追踪
+		self._goal_tracker = GoalTracker(algo_type="improved")
 
 
 
@@ -836,6 +847,7 @@ class MapDrive(Node):
 		self._coverage_start_time = None
 		self._cover_state = "idle"
 		self.get_logger().info("Boustrophedon Decomposition completed...")
+		self._goal_tracker.finish()
 
 
 
@@ -1240,6 +1252,7 @@ class MapDrive(Node):
 		self.get_logger().info(f'Waiting for NavigateToPose action server...')
 		if not self.navigate_to_pose_client.wait_for_server(timeout_sec=5.0):
 			self.get_logger().error('NavigateToPose action server not available after waiting!')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "server_unavailable")
 			return False
 
 		# Create the goal message
@@ -1264,14 +1277,17 @@ class MapDrive(Node):
 			goal_handle = send_goal_future.result()
 		except Exception as e:
 			self.get_logger().error(f"Exception while sending goal: {e}")
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"send_exception:{e}")
 			return False
 
 		if goal_handle is None:
 			self.get_logger().error('Timed out waiting for goal to be accepted by the server.')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "send_timeout")
 			return False
 
 		if not goal_handle.accepted:
 			self.get_logger().error('Goal rejected by server')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "goal_rejected")
 			return False
 
 		self.get_logger().info('Goal accepted by server, waiting for result...')
@@ -1283,19 +1299,23 @@ class MapDrive(Node):
 		except Exception as e:
 			self.get_logger().error(f"Exception while waiting for result: {e}")
 			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"result_exception:{e}")
 			return False
 
 		if result is None:
 			self.get_logger().warn("Navigation timed out!")
 			goal_handle.cancel_goal_async() # Cancel the goal if we timed out
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "result_timeout")
 			return False
 
 		status = result.status
 		if status == GoalStatus.STATUS_SUCCEEDED:
 			self.get_logger().info('Goal succeeded!')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, True, "")
 			return True
 		else:
 			self.get_logger().warn(f'Goal failed with status: {status}')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"result_status:{status}")
 			return False
 
 
@@ -1313,9 +1333,14 @@ class MapDrive(Node):
 		if not poses:
 			return False
 
+		n_pts = len(poses)
+		x0, y0 = poses[0][0], poses[0][1]
+		xn, yn = poses[-1][0], poses[-1][1]
+
 		self.get_logger().info('Waiting for NavigateThroughPoses action server...')
 		if not self.navigate_through_poses_client.wait_for_server(timeout_sec=5.0):
 			self.get_logger().error('NavigateThroughPoses action server not available!')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "server_unavailable")
 			return False
 
 		goal_msg = NavigateThroughPoses.Goal()
@@ -1334,7 +1359,7 @@ class MapDrive(Node):
 			goal_msg.poses.append(ps)
 
 		self.get_logger().info(
-			f'Sending NavigateThroughPoses: {len(poses)} poses')
+			f'Sending NavigateThroughPoses: {n_pts} poses')
 
 		send_goal_future = self.navigate_through_poses_client.send_goal_async(goal_msg)
 		try:
@@ -1342,17 +1367,20 @@ class MapDrive(Node):
 			goal_handle = send_goal_future.result()
 		except Exception as e:
 			self.get_logger().error(f"NavigateThroughPoses send_goal exception: {e}")
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"send_exception:{e}")
 			return False
 
 		if goal_handle is None:
 			self.get_logger().error('NavigateThroughPoses goal not accepted (timeout).')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "send_timeout")
 			return False
 		if not goal_handle.accepted:
 			self.get_logger().error('NavigateThroughPoses goal rejected by server.')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "goal_rejected")
 			return False
 
 		# 超时 = 60s 基础 + 每点 2s
-		timeout = max(60, len(poses) * 2)
+		timeout = max(60, n_pts * 2)
 		self.get_logger().info(f'NavigateThroughPoses accepted, waiting (timeout={timeout}s)...')
 		result_future = goal_handle.get_result_async()
 		try:
@@ -1361,19 +1389,23 @@ class MapDrive(Node):
 		except Exception as e:
 			self.get_logger().error(f"NavigateThroughPoses result exception: {e}")
 			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"result_exception:{e}")
 			return False
 
 		if result is None:
 			self.get_logger().warn("NavigateThroughPoses timed out!")
 			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "result_timeout")
 			return False
 
 		status = result.status
 		if status == GoalStatus.STATUS_SUCCEEDED:
 			self.get_logger().info('NavigateThroughPoses succeeded!')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, True, "")
 			return True
 		else:
 			self.get_logger().warn(f'NavigateThroughPoses failed with status: {status}')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"result_status:{status}")
 			return False
 
 	def add_more_waypoints(self, x1, y1, x2, y2, angle_quat):
@@ -1560,6 +1592,7 @@ def main(args=None):
 	try:
 		rclpy.spin(p)
 	except KeyboardInterrupt:
+		p._goal_tracker.abort()
 		p.get_logger().info('Shutting down gracefully...')
 	except Exception as e:
 		p.get_logger().error(f'Unexpected error: {e}')
