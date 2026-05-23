@@ -41,9 +41,9 @@ def generate_launch_description():
     remappings = [
         ('/tf', 'tf'),
         ('/tf_static', 'tf_static'),
-        ('rgb/image', '/rgb/image'),
-        ('rgb/camera_info', '/rgb/camera_info'),
-        ('depth/image', '/depth/image'),
+        ('rgb/image', '/ascamera/camera_publisher/rgb0/image'),
+        ('rgb/camera_info', '/ascamera/camera_publisher/rgb0/camera_info'),
+        ('depth/image', '/ascamera/camera_publisher/depth0/image_raw'),
         ('odom', '/odom'),
         ('scan','/scan_raw'),
     ]
@@ -66,7 +66,7 @@ def generate_launch_description():
         # Nodes to launch
         Node(
             package='rtabmap_sync', executable='rgbd_sync', output='screen',
-            parameters=[{'approx_sync': True, 'approx_sync_max_interval': 0.008, 'use_sim_time': use_sim_time, 'qos': qos}],
+            parameters=[{'approx_sync': True, 'approx_sync_max_interval': 0.05, 'use_sim_time': use_sim_time, 'qos': qos}],
             remappings=remappings),
 
         # SLAM Mode:

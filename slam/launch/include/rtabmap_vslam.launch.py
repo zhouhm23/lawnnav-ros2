@@ -21,7 +21,14 @@ def generate_launch_description():
         'queue_size': 50,  
         'Reg/Strategy': '1',
         'Reg/Force3DoF': 'true',
-        'Grid/RangeMin': '0.2',  
+        'Grid/RangeMin': '0.02',
+        'Grid/RangeMax': '5.0',
+        'Grid/CellSize': '0.05',
+        # Projection/ground related parameters
+        'proj_max_ground_height': '0.20',
+        'proj_max_ground_angle': '20',
+        'RGBD/ProximityBySpace': 'true',
+        'RGBD/ProximityPathMaxNeighbors': '10',
         'Optimizer/GravitySigma': '0',  # Disable imu constraints (we are already in 2D)
         'Grid/Sensor': 'true',
         #'approx_sync_max_interval': 0.02,  
@@ -52,7 +59,7 @@ def generate_launch_description():
         # Nodes to launch
         Node(
             package='rtabmap_sync', executable='rgbd_sync', output='screen',
-            parameters=[{'approx_sync': True, 'approx_sync_max_interval': 0.008, 'use_sim_time': use_sim_time, 'qos': qos}],
+            parameters=[{'approx_sync': True, 'approx_sync_max_interval': 0.05, 'use_sim_time': use_sim_time, 'qos': qos}],
             remappings=remappings),
 
         # SLAM Mode:
