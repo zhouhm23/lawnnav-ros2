@@ -1,28 +1,13 @@
-#!/usr/bin/env python3
-"""
-rtabmap_camera_nav.launch.py — (a) 单相机 RTAB-Map 导航/覆盖
-
-定位方式: RTAB-Map localization (visual), 跳过 AMCL
-代价图输入: /scan_raw (pointcloud_to_laserscan 虚拟雷达)
-
-TF 树:
-  map → odom → base_footprint → base_link
-                                → depth_cam → depth_cam_optical
-
-用法:
-    ros2 launch navigation rtabmap_camera_nav.launch.py localization:=false   # 建图
-    ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true    # 纯定位
-"""
-
+# DEPRECATED 原版恢复: 此文件内容回退自 git commit e39c77e (重构前最后正常版本)
+# 仅修改 2 处: include 路径 + use_depth_camera flag
 import os
 from ament_index_python.packages import get_package_share_directory
 
-from launch_ros.actions import PushRosNamespace
+from launch_ros.actions import PushRosNamespace, Node
 from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
-
 
 def launch_setup(context):
     compiled = os.environ['need_compile']
@@ -37,7 +22,7 @@ def launch_setup(context):
     map_name = LaunchConfiguration('map', default='').perform(context)
     robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
-    localization = LaunchConfiguration('localization', default='true').perform(context)
+    localization = LaunchConfiguration('localization', default='false').perform(context)
 
     sim_arg = DeclareLaunchArgument('sim', default_value=sim)
     map_name_arg = DeclareLaunchArgument('map', default_value=map_name)
@@ -47,28 +32,33 @@ def launch_setup(context):
 
     use_sim_time = 'true' if sim == 'true' else 'false'
     use_namespace = 'true' if robot_name != '/' else 'false'
-    frame_prefix = '' if robot_name == '/' else '%s/' % robot_name
-    topic_prefix = '' if robot_name == '/' else '/%s' % robot_name
+    frame_prefix = '' if robot_name == '/' else '%s/'%robot_name
+    topic_prefix = '' if robot_name == '/' else '/%s'%robot_name
+    map_frame = '{}map'.format(frame_prefix)
+    odom_frame = '{}odom'.format(frame_prefix)
+    base_frame = '{}base_footprint'.format(frame_prefix)
+    depth_camera_topic = '/ascamera/camera_publisher/depth0/image_raw'.format(topic_prefix)
+    depth_camera_info = '/ascamera/camera_publisher/rgb0/camera_info'.format(topic_prefix)
+    rgb_camera_topic = '/ascamera/camera_publisher/rgb0/image'.format(topic_prefix)
+    odom_topic = '{}/odom'.format(topic_prefix)
+    scan_topic = '{}/scan_raw'.format(topic_prefix)
 
     base_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
+        PythonLaunchDescriptionSource(os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
         launch_arguments={
             'sim': sim,
             'master_name': master_name,
             'robot_name': robot_name,
-            'use_depth_camera': 'true',
-            'use_lidar': 'false',
             'action_name': 'horizontal',
+            'use_depth_camera': 'true',   # 适配新 robot.launch.py 双 bool
         }.items(),
     )
 
     navigation_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
+        PythonLaunchDescriptionSource(os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params_camera.yaml'),
+            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params.yaml'),
             'namespace': robot_name,
             'use_namespace': use_namespace,
             'autostart': 'true',
@@ -78,7 +68,7 @@ def launch_setup(context):
 
     rtabmap_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(navigation_package_path, 'launch/include/rtabmap_camera_nav.launch.py')),
+            os.path.join(navigation_package_path, 'launch/include/rtabmap_camera_nav.launch.py')),  # 改为新文件名
         launch_arguments={
             'use_sim_time': use_sim_time,
             'localization': localization,
@@ -86,25 +76,23 @@ def launch_setup(context):
     )
 
     bringup_launch = GroupAction(
-        actions=[
-            PushRosNamespace(robot_name),
-            base_launch,
-            TimerAction(
-                period=10.0,
-                actions=[navigation_launch],
-            ),
-            rtabmap_launch
-        ]
+     actions=[
+         PushRosNamespace(robot_name),
+         base_launch,
+         TimerAction(
+             period=10.0,
+             actions=[navigation_launch],
+         ),
+         rtabmap_launch
+      ]
     )
 
     return [sim_arg, master_name_arg, robot_name_arg, localization_arg, bringup_launch]
 
-
 def generate_launch_description():
     return LaunchDescription([
-        OpaqueFunction(function=launch_setup)
+        OpaqueFunction(function = launch_setup)
     ])
-
 
 if __name__ == '__main__':
     ld = generate_launch_description()

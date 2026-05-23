@@ -38,7 +38,7 @@ def launch_setup(context):
 
     # path to optional params file in navigation package
     nav_share = get_package_share_directory('navigation')
-    rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params_camera.yaml')
+    rtabmap_params_file = os.path.join(nav_share, 'config', 'rtabmap_params.yaml')
 
     # Logic for localization vs mapping
     # Localization: Mem/IncrementalMemory=false, Mem/InitWMWithAllNodes=true

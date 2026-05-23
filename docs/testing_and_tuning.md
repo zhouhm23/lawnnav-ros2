@@ -690,6 +690,7 @@ python3 tools/log_simplify.py
 # 改完源码要编译
 cd ros2_ws/ && colcon build --packages-select navigation slam && source install/local_setup.sh
 ```
+fix：目前仅融合方案和单雷达正常，单视觉失败
 1. **多方案冲突处理**  
    目前代码库中多种建图/导航方案（如纯视觉、视觉+雷达、传统激光）的配置相互冲突，无法在同一个分支内同时工作。若通过条件分支难以解决，请采用 Git 多分支分别维护各方案，保持主分支简洁。
 2. **RTAB-Map 模式切换**  
