@@ -92,7 +92,8 @@ class CoverageEvaluator(Node):
         self.declare_parameter('update_hz', 10.0)
         self.declare_parameter('publish_hz', 2.0)
         self.declare_parameter('log_period_sec', 1.0)
-        self.declare_parameter('trajectory_log_dir', '/home/ubuntu/ros2_ws/src/logs/')
+        self.declare_parameter('trajectory_log_dir', '/home/ubuntu/ros2_ws/src/logs/trajectory/')
+        self.declare_parameter('costmap_log_dir', '/home/ubuntu/ros2_ws/src/logs/costmap/')
         self.declare_parameter('trajectory_log_enabled', True)
 
         self.clicked_point_topic = self.get_parameter('clicked_point_topic').get_parameter_value().string_value
@@ -106,6 +107,7 @@ class CoverageEvaluator(Node):
         self.publish_hz = float(self.get_parameter('publish_hz').value)
         self.log_period_sec = float(self.get_parameter('log_period_sec').value)
         self.trajectory_log_dir = self.get_parameter('trajectory_log_dir').get_parameter_value().string_value
+        self.costmap_log_dir = self.get_parameter('costmap_log_dir').get_parameter_value().string_value
         self.trajectory_log_enabled = bool(self.get_parameter('trajectory_log_enabled').value)
 
         if self.resolution >= 0.01:
@@ -428,9 +430,10 @@ class CoverageEvaluator(Node):
             cm = self._latest_costmap
             data = np.array(cm.data, dtype=np.int8).reshape(
                 cm.info.height, cm.info.width)
+            os.makedirs(self.costmap_log_dir, exist_ok=True)
             ts = time_mod.strftime('%Y%m%d_%H%M%S')
             costmap_path = os.path.join(
-                self.trajectory_log_dir, f'costmap_{ts}.npz')
+                self.costmap_log_dir, f'costmap_{ts}.npz')
             np.savez_compressed(
                 costmap_path,
                 data=data,

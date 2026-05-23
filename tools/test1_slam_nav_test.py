@@ -89,7 +89,7 @@ GOALS_MAP = [
 # CSV 输出路径
 CSV_RPE_PATH = "/home/ubuntu/ros2_ws/src/tools/rpe_results.csv"
 CSV_STATIC_PATH = "/home/ubuntu/ros2_ws/src/tools/static_stability_results.csv"
-POSE_LOG_DIR = "/home/ubuntu/ros2_ws/src/tools"
+POSE_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/pose"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

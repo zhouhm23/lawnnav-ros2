@@ -7,11 +7,11 @@ paper_figures.py — 论文覆盖路径插图生成器。
   fig2_actual_coverage.png   — 实际覆盖结果
 
 用法:
-    python3 tools/paper_figures.py  --csv logs/trajectory_20260510_124716.csv --costmap logs/costmap_20260510_124716.npz --output ./docs/paper_figures
+    python3 tools/paper_figures.py  --csv logs/trajectory/trajectory_20260510_124716.csv --costmap logs/costmap/costmap_20260510_124716.npz --output ./docs/paper_figures
 
     python3 tools/paper_figures.py \\
-        --csv logs/trajectory_xxx.csv \\
-        --costmap logs/costmap_xxx.npz \\
+        --csv logs/trajectory/trajectory_xxx.csv \\
+        --costmap logs/costmap/costmap_xxx.npz \\
         --polygon "0,0.4;2.4,0.4;2.4,-1.4;0,-1.4" \\
         --robot-width 0.171
 """

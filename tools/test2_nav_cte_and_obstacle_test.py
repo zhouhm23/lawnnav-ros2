@@ -108,6 +108,8 @@ CAR_HALF_W = CAR_WIDTH  / 2.0  # 0.09
 CSV_CTE_PATH = "/home/ubuntu/ros2_ws/src/tools/cte_results.csv"
 CSV_OBSTACLE_PATH = "/home/ubuntu/ros2_ws/src/tools/obstacle_avoidance_results.csv"
 TRAJECTORY_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs"
+CTE_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/cte"
+OBSTACLE_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/obstacle"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -629,7 +631,7 @@ class NavCteObstacleTest(Node):
         headers = ["t_s", "x_m", "y_m", "yaw_rad", "cte_m"]
 
         safe_label = segment_label.replace("→", "_to_") if segment_label else "cte"
-        csv_logger = CSVLogger(TRAJECTORY_LOG_DIR, f"trajectory_cte_{safe_label}", headers)
+        csv_logger = CSVLogger(CTE_LOG_DIR, f"trajectory_cte_{safe_label}", headers)
         self.get_logger().info(f"轨迹日志 -> {csv_logger.filepath}")
 
         for (t_val, px, py, pyaw), cte in zip(trajectory, cte_values):
@@ -653,7 +655,7 @@ class NavCteObstacleTest(Node):
 
         safe_label = path_label.replace("→", "_to_")
         csv_logger = CSVLogger(
-            TRAJECTORY_LOG_DIR,
+            OBSTACLE_LOG_DIR,
             f"trajectory_obs_{safe_label}_run{run_num}",
             headers)
         self.get_logger().info(f"避障轨迹日志 -> {csv_logger.filepath}")

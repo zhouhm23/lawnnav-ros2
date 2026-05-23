@@ -135,7 +135,7 @@ class MultiGoalNavigator(Node):
 
     def _record_pose_samples(self, rate_hz, duration_sec):
         self._csv_logger = CSVLogger(
-            directory='/home/ubuntu/ros2_ws/src/tools',
+            directory='/home/ubuntu/ros2_ws/src/logs/pose',
             prefix="pose_log",
             headers=["stamp_sec", "stamp_nanosec", "x", "y", "yaw"],
         )
