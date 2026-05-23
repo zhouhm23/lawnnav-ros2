@@ -32,9 +32,12 @@ rtabmap:
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
     # rgbd包含d，不能同时为真
-    'subscribe_rgbd': true
-    'subscribe_depth': false
+
+    # 这三个不能带引号，否则会被当成字符串而不是布尔值，导致rtabmap无法正确解析参数
+    'subscribe_rgbd': true 
+    'subscribe_depth': false 
     'subscribe_scan': true
+
     'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
     'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:

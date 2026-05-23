@@ -712,3 +712,7 @@ ros2 launch navigation slam_toolbox_lidar_nav.launch.py
 # (c) 视觉+雷达
 ros2 launch navigation rtabmap_vslam_nav.launch.py                    # 建图 (localization:=false)
 ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
+
+未来工作：
+1. 更新用户程序和测试程序的引用
+2. 设计最优实验方案

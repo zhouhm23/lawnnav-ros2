@@ -53,6 +53,9 @@ ros2 service call /rtabmap/publish_map rtabmap_msgs/srv/PublishMap "{global_map:
 
 ```bash
 ros2 launch navigation rviz_rtabmap_navigation.launch.py
+
+# 监控覆盖率（仅依赖 SLAM 位姿）
+ros2 launch coverage_evaluator coverage_evaluator.launch.py
 ```
 
 ### 终端 3：按需运行
@@ -70,23 +73,7 @@ ros2 launch path_coverage path_coverage.launch.py
 
 #### 实验测试：
 
-**B. 创新组覆盖测试 (RTAB-Map + 改进 path_coverage)：**
 
-```bash
-python3 launcher/start.py
-# 1. 建图 (手动驾驶遍历区域)
-> mapping
-# 2. 保存地图
-> save test_map
-# 3. 一键覆盖
-> coverage test_map test_180x240
-```
-
-**C. 监控覆盖率（仅依赖 SLAM 位姿）：**
-
-```bash
-ros2 launch coverage_evaluator coverage_evaluator.launch.py
-```
 
 **D. 三组消融对照实验 (Group A/B/C)：**
 
