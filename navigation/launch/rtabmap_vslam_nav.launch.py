@@ -38,7 +38,7 @@ def launch_setup(context):
     map_name = LaunchConfiguration('map', default='').perform(context)
     robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
-    localization = LaunchConfiguration('localization', default='false').perform(context)
+    localization = LaunchConfiguration('localization', default='true').perform(context)
 
     sim_arg = DeclareLaunchArgument('sim', default_value=sim)
     map_name_arg = DeclareLaunchArgument('map', default_value=map_name)

@@ -674,19 +674,27 @@ Could not determine the type for the passed topic
 sudo ~/.stop_ros.sh
 export ROS_LOG_DIR=~/ros2_ws/src/logs/ros
 # (a) 单相机
-ros2 launch slam rtabmap_camera_slam.launch.py # 启动失败，无话题logs/ros/2026-05-23-06-33-57-925659-raspberrypi-602294/launch_simplify.log
-ros2 launch navigation rtabmap_camera_nav.launch.py # 启动失败，无话题logs/ros/2026-05-23-06-34-44-918013-raspberrypi-605271/launch_simplify.log
+ros2 launch slam rtabmap_camera_slam.launch.py # 启动失败，无话题
+ros2 launch navigation rtabmap_camera_nav.launch.py # 启动失败，无话题
 
 # (b) 单雷达
-ros2 launch slam slam_toolbox_lidar_slam.launch.py # 启动成功logs/ros/2026-05-23-06-35-29-329743-raspberrypi-609050/launch_simplify.log
-ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 启动成功，但导航异常logs/ros/2026-05-23-06-36-32-918458-raspberrypi-613668/launch_simplify.log
+ros2 launch slam slam_toolbox_lidar_slam.launch.py # 启动成功
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 启动成功，但导航异常
 
 # (c) 视觉+雷达
-ros2 launch slam rtabmap_vslam_slam.launch.py # 出现rgbd和雷达射线，但map没构建logs/ros/2026-05-23-06-37-25-358675-raspberrypi-617434/launch_simplify.log
-ros2 launch navigation rtabmap_vslam_nav.launch.py # rgbd生成了map，但雷达射线不能logs/ros/2026-05-23-06-38-37-261785-raspberrypi-622436/launch_simplify.log
+ros2 launch slam rtabmap_vslam_slam.launch.py # 能启动，但雷达没用来建图，也没保存地图功能
+ros2 launch navigation rtabmap_vslam_nav.launch.py # 能启动，不过地图要手动发布，日后可以想办法整合进来
 
 python3 tools/log_simplify.py
 # 以上结果均为我通过rviz观察所得
 # 改完源码要编译
 cd ros2_ws/ && colcon build --packages-select navigation slam && source install/local_setup.sh
 ```
+1. **多方案冲突处理**  
+   目前代码库中多种建图/导航方案（如纯视觉、视觉+雷达、传统激光）的配置相互冲突，无法在同一个分支内同时工作。若通过条件分支难以解决，请采用 Git 多分支分别维护各方案，保持主分支简洁。
+2. **RTAB-Map 模式切换**  
+   RTAB-Map 不需要为建图和导航分别编写两个启动文件。它通过参数 `localization`（或 `RGBD/Localization`）区分建图与纯定位模式。地图自动保存在 `*.db` 文件中，导航时只需通过服务（如 `/rtabmap/publish_map`）发布已有地图即可，参见 `docs/usage.md` 第49行。
+3. **传统激光 SLAM 流程**  
+   使用 `slam_toolbox` 建图时，需要人工遥控移动机器人；完成后通过命令保存为 `pgm` 地图文件。纯导航阶段则通过 `map_server` 加载并发布该 `pgm` 地图，不得在导航时同时运行建图节点。详见 `docs/usage.md` 第44行。
+4. **传感器组合与代价地图**  
+   RTAB-Map 在建图阶段可灵活组合雷达、视觉或两者并用，只需修改 YAML 配置中的订阅话题即可。导航时若需要让深度相机参与代价地图构建，可使用 `pointcloud_to_laserscan` 将点云转为 `/scan`，与真实雷达统一输入到 Nav2 的代价地图中。

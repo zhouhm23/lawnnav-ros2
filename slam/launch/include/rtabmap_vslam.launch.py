@@ -1,3 +1,5 @@
+import os
+from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
@@ -12,27 +14,14 @@ def generate_launch_description():
     parameters = {
         'frame_id': 'base_footprint',
         'use_sim_time': use_sim_time,
-        'subscribe_rgbd': True,
-        'subscribe_scan': True,
         'use_action_for_goal': True,
         'qos_scan': qos,
         'qos_image': qos,
         'qos_imu': qos,
-        'queue_size': 50,  
-        'Reg/Strategy': '1',
-        'Reg/Force3DoF': 'true',
-        'Grid/RangeMin': '0.02',
-        'Grid/RangeMax': '5.0',
-        'Grid/CellSize': '0.05',
-        # Projection/ground related parameters
-        'proj_max_ground_height': '0.20',
-        'proj_max_ground_angle': '20',
-        'RGBD/ProximityBySpace': 'true',
-        'RGBD/ProximityPathMaxNeighbors': '10',
-        'Optimizer/GravitySigma': '0',  # Disable imu constraints (we are already in 2D)
-        'Grid/Sensor': 'true',
-        #'approx_sync_max_interval': 0.02,  
-        #'queue_size_imu': 300,  
+        # === 建图模式（YAML 无此参数，必须内联） ===
+        'Mem/IncrementalMemory': 'true',
+        'Mem/InitWMWithAllNodes': 'false',
+        'RGBD/StartAtOrigin': 'false',
     }
 
     remappings = [
@@ -44,6 +33,10 @@ def generate_launch_description():
         ('odom', '/odom'),
         ('scan','/scan_raw'),
     ]
+
+    # load params YAML from slam package config
+    slam_share = get_package_share_directory('slam')
+    rtabmap_params_file = os.path.join(slam_share, 'config', 'rtabmap_params_vslam.yaml')
 
     return LaunchDescription([
 
@@ -65,7 +58,7 @@ def generate_launch_description():
         # SLAM Mode:
         Node(
             package='rtabmap_slam', executable='rtabmap', output='screen',
-            parameters=[parameters],
+            parameters=[parameters, rtabmap_params_file],
             remappings=remappings,
             arguments=['-d']),
     ])
