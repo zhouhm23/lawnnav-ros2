@@ -260,7 +260,7 @@ class Launcher:
 
         self._info("=== 启动 SLAM 建图模式 (localization:=false) ===")
         self._spawn("navigation",
-                    "ros2 launch navigation rtabmap_navigation.launch.py localization:=false")
+                    "ros2 launch navigation rtabmap_camera_nav.launch.py")
         time.sleep(5.0)
         self._ensure_rviz()
         self._current_mode = "mapping"
@@ -292,7 +292,7 @@ class Launcher:
         # 启动 navigation（RTAB-Map localization + Nav2）
         self._info("=== 纯定位覆盖 (localization:=true) ===")
         self._spawn("navigation",
-                    "ros2 launch navigation rtabmap_navigation.launch.py localization:=true")
+                    "ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true")
         self._info("等待 navigation 初始化 (10s)...")
         time.sleep(10.0)
 
