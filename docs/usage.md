@@ -130,4 +130,8 @@ python3 tools/test_coverage_comparison.py --sensor vslam --algo ours
 
 # 跑完生成插图
 python3 tools/paper_figures.py ...
+
+# 自动输出: tools/results/coverage_results.csv（覆盖率、耗时，仅正常完成时写入）
+# evaluator 详细日志: logs/coverage/*_evaluator.log
+# 外置相机视频分析（覆盖率/重复覆盖率/轨迹长度/碰撞）在 PC 端独立完成
 ```

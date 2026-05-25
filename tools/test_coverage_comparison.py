@@ -19,8 +19,10 @@ test_coverage_comparison.py — 全覆盖性能对照实验（论文表1）。
     python3 tools/test_coverage_comparison.py --core    # 核心4组
     python3 tools/test_coverage_comparison.py --all     # 全部6组
 """
-import argparse, os, shlex, shutil, signal, subprocess, sys, time
+import argparse, os, re, shlex, shutil, signal, subprocess, sys, time
 from pathlib import Path
+
+from test_utils import AppendingCSVLogger
 
 WS_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER_DIR = WS_ROOT / "launcher"
@@ -29,6 +31,7 @@ SLAM_MAPS_DIR = str(WS_ROOT / "slam" / "maps")
 LOG_DIR = str(WS_ROOT / "logs" / "coverage")
 RESULTS_DIR = str(Path(__file__).resolve().parent / "results")
 REGION_FILE = str(LAUNCHER_DIR / "regions" / "test_180x240.yaml")
+SAMPLE_INTERVAL = 10.0  # CPU/内存采样间隔 (秒)
 
 SENSOR_MAP = {"camera": "camera_map", "lidar": "radar_map", "vslam": "vslam_map"}
 NAV_CMD = {
@@ -143,13 +146,98 @@ def _publish_rtabmap_map():
                    shell=True, executable="/bin/bash",
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
 
+def _sample_cpu_mem():
+    """采样系统整体 CPU 使用率 (%) 和内存使用率 (%)。返回 (cpu_pct, mem_pct)。"""
+    try:
+        # CPU: /proc/stat 第一行 (total cpu time)
+        with open("/proc/stat", "r") as f:
+            fields = f.readline().split()
+        # user nice system idle iowait irq softirq steal ...
+        cpu_times = list(map(int, fields[1:8]))
+        total = sum(cpu_times)
+        idle = cpu_times[3] + cpu_times[4]  # idle + iowait
+        cpu_pct = 100.0 * (1.0 - idle / total) if total > 0 else 0.0
+
+        # Memory: /proc/meminfo
+        meminfo = {}
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if "MemTotal:" in line:
+                    meminfo["total"] = int(line.split()[1])
+                elif "MemAvailable:" in line:
+                    meminfo["avail"] = int(line.split()[1])
+                if len(meminfo) >= 2:
+                    break
+        mem_pct = 100.0 * (1.0 - meminfo["avail"] / meminfo["total"]) if meminfo.get("total") else 0.0
+
+        return cpu_pct, mem_pct
+    except Exception:
+        return 0.0, 0.0
+
+
+def _parse_evaluator_log(sensor, algo, run_id):
+    """从 evaluator 日志提取最终覆盖率。匹配 "Final coverage:" 或最后一条 "Coverage:" 行。"""
+    log_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_evaluator.log")
+    if not os.path.exists(log_path):
+        return None, None, None
+    last_cov, last_covered, last_total = None, None, None
+    with open(log_path, "r") as f:
+        for line in f:
+            # "Final coverage: XX.XX% (covered/total cells)."  — 优先
+            # "Coverage: XX.XX% (covered/total cells)"         — 兜底
+            m = re.search(r"(?:Final )?[Cc]overage:\s*([\d.]+)%\s*\((\d+)/(\d+)", line)
+            if m:
+                last_cov = float(m.group(1))
+                last_covered = int(m.group(2))
+                last_total = int(m.group(3))
+    return last_cov, last_covered, last_total
+
+
+def _save_coverage_result(sensor, algo, run_id, coverage_pct, elapsed_sec,
+                          covered_cells, total_cells, cpu_avg, mem_avg):
+    """追加一行覆盖结果到 tools/results/coverage_results.csv。"""
+    csv_path = os.path.join(RESULTS_DIR, "coverage_results.csv")
+    headers = ["timestamp", "sensor", "algo", "run_id",
+               "coverage_pct", "covered_cells", "total_cells",
+               "elapsed_sec", "cpu_avg_pct", "mem_avg_pct"]
+    logger = AppendingCSVLogger(csv_path, headers)
+    logger.add_row([
+        f"{time.time():.3f}", sensor, algo, str(run_id),
+        f"{coverage_pct:.2f}" if coverage_pct is not None else "",
+        str(covered_cells) if covered_cells is not None else "",
+        str(total_cells) if total_cells is not None else "",
+        f"{elapsed_sec:.1f}",
+        f"{cpu_avg:.1f}", f"{mem_avg:.1f}",
+    ])
+    logger.close()
+    _ok(f"结果已保存: {csv_path} (run_id={logger.run_id})")
+
+
+def _save_cpu_mem_samples(sensor, algo, run_id, cpu_samples, mem_samples):
+    """保存原始 CPU/内存采样数据到 logs/coverage/。"""
+    csv_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_perf.csv")
+    with open(csv_path, "w") as f:
+        f.write("sample,cpu_pct,mem_pct\n")
+        for i, (cpu, mem) in enumerate(zip(cpu_samples, mem_samples), start=1):
+            f.write(f"{i},{cpu:.1f},{mem:.1f}\n")
+    _info(f"性能原始数据已保存: {csv_path}")
+
+
 def run_one(sensor, algo, run_id):
+    """执行单次覆盖实验。正常完成返回 True，中断抛 KeyboardInterrupt，失败返回 False。
+    仅在正常完成时保存结果数据。
+    """
     label = f"{sensor}_{algo}_run{run_id}"
     map_name = SENSOR_MAP[sensor]
     print(f"\n{'='*60}")
     print(f"  {label}  传感器:{sensor}  算法:{algo}  第{run_id}次")
     print(f"{'='*60}")
-    _info("请在 PC 上启动录像！按 Enter 继续..."); input()
+    _info("请在 PC 上启动录像！按 Enter 继续...")
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        _warn("用户取消")
+        return False
     _stop_ros()
 
     nav = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {NAV_CMD[sensor]}"],
@@ -170,7 +258,8 @@ def run_one(sensor, algo, run_id):
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {ALGO_CMD[algo]}"],
                           stdout=open(os.path.join(LOG_DIR, f"{label}_pathcoverage.log"), "w"),
                           stderr=subprocess.STDOUT, env=_ros_env())
-    ev = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && ros2 launch coverage_evaluator coverage_evaluator.launch.py"],
+    ev = subprocess.Popen(["bash", "-lc",
+                           f"{_source_cmd()} && ros2 launch coverage_evaluator coverage_evaluator.launch.py"],
                           stdout=open(os.path.join(LOG_DIR, f"{label}_evaluator.log"), "w"),
                           stderr=subprocess.STDOUT, env=_ros_env())
     _info("等待节点就绪 (5s)..."); time.sleep(5)
@@ -181,20 +270,62 @@ def run_one(sensor, algo, run_id):
         _warn("区域发布失败"); _cleanup(pc, ev, nav, mapserver); return False
 
     _ok(f"{label} 覆盖已开始")
-    start = time.time()
-    try:
-        while time.time() - start < COVERAGE_TIMEOUT:
-            if pc.poll() is not None: _info("path_coverage 已退出"); break
-            time.sleep(5)
-        else:
-            _warn(f"超时 {COVERAGE_TIMEOUT}s，强制结束")
-            _cleanup(pc, ev, nav, mapserver); return False
-    except KeyboardInterrupt:
-        _warn("用户中断"); _cleanup(pc, ev, nav, mapserver); raise
+    start_time = time.time()
+    cpu_samples = []
+    mem_samples = []
+    last_sample = start_time
+    success = False
 
-    _info(f"等待 evaluator 写出最后数据 ({POST_RUN_WAIT}s)..."); time.sleep(POST_RUN_WAIT)
+    try:
+        while time.time() - start_time < COVERAGE_TIMEOUT:
+            # 每 SAMPLE_INTERVAL 秒采样 CPU/内存
+            now = time.time()
+            if now - last_sample >= SAMPLE_INTERVAL:
+                cpu_pct, mem_pct = _sample_cpu_mem()
+                cpu_samples.append(cpu_pct)
+                mem_samples.append(mem_pct)
+                last_sample = now
+                _info(f"  性能采样 [{len(cpu_samples)}]: CPU {cpu_pct:.1f}%  MEM {mem_pct:.1f}%")
+
+            if pc.poll() is not None:
+                _info("path_coverage 已退出 (正常完成)")
+                success = True
+                # 最后一次采样
+                cpu_pct, mem_pct = _sample_cpu_mem()
+                cpu_samples.append(cpu_pct)
+                mem_samples.append(mem_pct)
+                break
+            time.sleep(2)
+        else:
+            _warn(f"超时 {COVERAGE_TIMEOUT}s，强制结束 — 不保存数据")
+            _cleanup(pc, ev, nav, mapserver)
+            return False
+    except KeyboardInterrupt:
+        _warn("用户中断 — 不保存数据")
+        _cleanup(pc, ev, nav, mapserver)
+        raise
+
+    elapsed = time.time() - start_time
+    cpu_avg = sum(cpu_samples) / len(cpu_samples) if cpu_samples else 0.0
+    mem_avg = sum(mem_samples) / len(mem_samples) if mem_samples else 0.0
+    _info(f"平均性能: CPU {cpu_avg:.1f}%  MEM {mem_avg:.1f}% ({len(cpu_samples)} 次采样)")
+
+    # 先清理进程（触发 evaluator shutdown → log_final → 写"Final coverage:"到日志）
     _cleanup(pc, ev, nav, mapserver)
-    _ok(f"{label} 完成"); return True
+    _info(f"等待日志刷新 ({POST_RUN_WAIT}s)...")
+    time.sleep(POST_RUN_WAIT)
+
+    # ── 提取数据并保存（仅在正常完成时） ────────────────────────────
+    coverage_pct, covered, total = _parse_evaluator_log(sensor, algo, run_id)
+    if coverage_pct is not None:
+        _info(f"覆盖率: {coverage_pct:.1f}% ({covered}/{total} cells)  耗时: {elapsed:.0f}s")
+    else:
+        _warn("未能从 evaluator 日志提取覆盖率，请手动检查日志")
+
+    _save_coverage_result(sensor, algo, run_id, coverage_pct, elapsed, covered, total, cpu_avg, mem_avg)
+    _save_cpu_mem_samples(sensor, algo, run_id, cpu_samples, mem_samples)
+    _ok(f"{label} 完成")
+    return True
 
 def main():
     p = argparse.ArgumentParser(description="全覆盖性能对照实验")

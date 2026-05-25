@@ -138,6 +138,8 @@ class SlamNavTest(Node):
         self._segment_trajectories = []  # [[(x,y,yaw)], ...]  每段原始轨迹
         self._segment_cte = []       # [cte_rmse, cte_max] 每段
         self._collisions = []        # [0/1, ...]
+        self._static_results = []    # [(label, n_samples, rmse_pos, rmse_yaw, max_pos, max_yaw)]
+        self._success = False        # 全航点正常完成才置 True
 
     # ── 回调 ─────────────────────────────────────────────────────────
 
@@ -203,14 +205,12 @@ class SlamNavTest(Node):
 
             if not ok:
                 self.get_logger().error(f"航点 {label} 导航失败，测试中止")
-                self._write_results()
                 return
 
             # 记录到达位姿
             cp = self._get_current_pose()
             if cp is None:
                 self.get_logger().error(f"航点 {label} 到达后定位丢失")
-                self._write_results()
                 return
             self._slam_poses.append(cp)
             x_p, y_p, yaw_deg_p = map_to_paper(cp[0], cp[1], cp[2])
@@ -240,7 +240,6 @@ class SlamNavTest(Node):
                     yaw_actual = float(parts[2]) if len(parts) > 2 else exp_yaw
                 except (ValueError, IndexError):
                     self.get_logger().error(f"输入格式错误: '{gt_str}'，预期 'dx dy yaw_actual'")
-                    self._write_results()
                     return
 
                 gt_x_p = exp_x + dx
@@ -261,7 +260,8 @@ class SlamNavTest(Node):
                 else:
                     self._collisions.append(0)  # 其他段不关心碰撞
 
-        # ── 计算并输出 ──────────────────────────────────────────────────
+        # ── 全部航点完成，保存结果 ─────────────────────────────────────
+        self._success = True
         self._compute_and_log_rpe()
         self._write_results()
         self.get_logger().info("所有测试完成 ✓")
@@ -430,14 +430,22 @@ class SlamNavTest(Node):
         csv_logger.close()
 
     def _save_static_result(self, label, n_samples, rmse_pos, rmse_yaw, max_pos, max_yaw):
+        """暂存静态结果到内存，全测试成功后才写入 CSV。"""
+        self._static_results.append((label, n_samples, rmse_pos, rmse_yaw, max_pos, max_yaw))
+
+    def _write_static_csv(self):
+        """仅在全部成功时将缓存的静态结果写入 CSV。"""
+        if not self._static_results:
+            return
         headers = ["timestamp", "sensor", "waypoint", "n_samples",
                    "rmse_pos_m", "rmse_yaw_deg", "max_pos_m", "max_yaw_deg"]
         logger = AppendingCSVLogger(CSV_STATIC_PATH, headers)
-        logger.add_row([
-            f"{time.time():.3f}", self._sensor, str(label), str(n_samples),
-            f"{rmse_pos:.6f}", f"{math.degrees(rmse_yaw):.6f}",
-            f"{max_pos:.6f}", f"{math.degrees(max_yaw):.6f}",
-        ])
+        for label, n, rpos, ryaw, mpos, myaw in self._static_results:
+            logger.add_row([
+                f"{time.time():.3f}", self._sensor, str(label), str(n),
+                f"{rpos:.6f}", f"{math.degrees(ryaw):.6f}",
+                f"{mpos:.6f}", f"{math.degrees(myaw):.6f}",
+            ])
         logger.close()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -528,6 +536,7 @@ class SlamNavTest(Node):
     # ══════════════════════════════════════════════════════════════════════
 
     def _write_results(self):
+        """仅在全部成功时写入 CTE 和静态结果 CSV。RPE 已在 _save_rpe_results 中写入。"""
         # CTE
         if self._segment_cte:
             headers = ["timestamp", "sensor",
@@ -545,6 +554,9 @@ class SlamNavTest(Node):
                     row.extend(["", ""])
             logger.add_row(row)
             logger.close()
+
+        # Static
+        self._write_static_csv()
 
         self.get_logger().info(f"\n论文数据已保存到 {RESULTS_DIR}/")
         self.get_logger().info(f"  RPE:    {CSV_RPE_PATH}")
