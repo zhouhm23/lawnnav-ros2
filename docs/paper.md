@@ -84,7 +84,8 @@
 **4.3 全覆盖性能对比**
 
 **实验设计**：三种传感器配置 × 两种覆盖算法（标准BCD / 边缘外扩BCD），n=**3次**（有多余时间可以补充到5次）。
-
+标准BCD：polygon_expand: 0.0、coverage_clearance: 0.0、expand_max_non_lethal: 0、drive_max_non_lethal: 0；
+边缘外扩BCD：polygon_expand: 0.11、coverage_clearance: 0.05、expand_max_non_lethal: 50、drive_max_non_lethal: 80。
 **表1：全覆盖性能对比（Mean ± Std）**
 （待补充）
 | 传感器配置 | 覆盖算法 | 覆盖率 (%) | 重复覆盖率 (%) | 碰撞次数 | 轨迹长度 (m) | 时长 (s) | CPU占用 (%) | 内存占用 (%) |

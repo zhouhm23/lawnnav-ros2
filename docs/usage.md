@@ -120,32 +120,14 @@ python3 tools/test_slam_nav_test.py --sensor vslam
 **阶段3：全覆盖性能对照实验（最多6组 × 3次 = 18次）**
 
 ```bash
-# ★ 核心4组 (必须)
-python3 tools/test_coverage_comparison.py --core
-
-# 或逐组跑:
+# 逐组跑:
 python3 tools/test_coverage_comparison.py --sensor camera --algo ours
 python3 tools/test_coverage_comparison.py --sensor camera --algo baseline
 python3 tools/test_coverage_comparison.py --sensor lidar --algo baseline
 python3 tools/test_coverage_comparison.py --sensor vslam --algo baseline
-
-# 泛化组 (有空再测)
 python3 tools/test_coverage_comparison.py --sensor lidar --algo ours
 python3 tools/test_coverage_comparison.py --sensor vslam --algo ours
 
 # 跑完生成插图
 python3 tools/paper_figures.py ...
 ```
-
-**实验矩阵说明：**
-
-| 优先级 | 传感器 | 覆盖算法 | 论证目的 |
-|:---:|:------|:--------|:--------|
-| ★ | 单深度相机 | 边缘外扩BCD | **本文方法** |
-| ★ | 单深度相机 | 标准BCD | 消融：证明外扩算法有效 |
-| ★ | 单2D雷达 | 标准BCD | 传统基线 |
-| ★ | 视觉+雷达 | 标准BCD | 融合基线 |
-| 有空 | 单2D雷达 | 边缘外扩BCD | 泛化：算法非相机特化 |
-| 有空 | 视觉+雷达 | 边缘外扩BCD | 融合上限 |
-
----
