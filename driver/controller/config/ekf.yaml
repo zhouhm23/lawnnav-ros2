@@ -174,7 +174,7 @@
       #imu0_twist_rejection_threshold: 0.8                #
       #imu0_linear_acceleration_rejection_threshold: 0.8  #
 
-      # ── RTAB-Map 视觉里程计反馈 (暂时禁用: 视觉噪声大 → 污染 EKF) ──
+      # ── RTAB-Map 视觉里程计反馈 (没有，暂时不知道rtabmap怎么发布位置，查看所有话题都见不到) ──
       # 待相机/照明改善后可重新启用。
       #pose0: rtabmap/localization_pose
       #pose0_config: [true,  true,  false,

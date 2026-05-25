@@ -673,17 +673,6 @@ Could not determine the type for the passed topic
 ```
 sudo ~/.stop_ros.sh
 export ROS_LOG_DIR=~/ros2_ws/src/logs/ros
-# (a) 单相机
-ros2 launch slam rtabmap_camera_slam.launch.py # 启动失败，无话题
-ros2 launch navigation rtabmap_camera_nav.launch.py # 启动失败，无话题
-
-# (b) 单雷达
-ros2 launch slam slam_toolbox_lidar_slam.launch.py # 启动成功
-ros2 launch navigation slam_toolbox_lidar_nav.launch.py # 启动成功，但导航异常
-
-# (c) 视觉+雷达
-ros2 launch slam rtabmap_vslam_slam.launch.py # 能启动，但雷达没用来建图，也没保存地图功能
-ros2 launch navigation rtabmap_vslam_nav.launch.py # 能启动，不过地图要手动发布，日后可以想办法整合进来
 
 python3 tools/log_simplify.py --info
 # 以上结果均为我通过rviz观察所得

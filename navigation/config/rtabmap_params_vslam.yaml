@@ -9,7 +9,7 @@ rtabmap:
     # Ground projection / detection
     # Ground height thresholds (reverted to previous values)
     'Grid/MinGroundHeight': '-0.20'
-    'Grid/MaxGroundHeight': '0.05'
+    'Grid/MaxGroundHeight': '0.03'
     'Grid/MaxGroundAngle': '15'
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'

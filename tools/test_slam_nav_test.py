@@ -83,9 +83,9 @@ SENSOR_POSE_TOPIC = {
 # 导航路径: 三角形 1→3→4→1（map 坐标系，x⁺=车头, y⁺=左侧）
 GOALS_MAP = [
     (0.0,   0.0,  0.0),               # 点1 (起点, 不导航, 仅初始位姿)
-    (1.8,  -1.0,  0.0),               # 点3
-    (0.0,  -1.0,  0.0),               # 点4
-    (0.0,   0.0,  0.0),               # 点1 (闭合)
+    (1.8, -1.0, -math.pi),         # 论文点3: (1.4, 1.8)
+    (0.0, -1.0,  math.pi / 2.0),   # 论文点4: (1.4, 0)
+    (0.0,  0.0,  0.0),             # 论文点1: (0.4, 0)
 ]
 PAPER_LABELS = [1, 3, 4, 1]
 SEGMENT_NAMES = [(1, 3), (3, 4), (4, 1)]  # 3 段 CTE
@@ -93,9 +93,9 @@ SEGMENT_NAMES = [(1, 3), (3, 4), (4, 1)]  # 3 段 CTE
 # GT 输入航点 (0-based index) 及其论文坐标系理论值
 # 用户输入偏差 (dx dy yaw_actual)，如 0.02 -0.04 176 → 实际=(理论+偏差)
 GT_WAYPOINTS = {
-    1: (1.4, 1.8, 180.0),   # 点3  理论论文坐标
-    2: (1.4, 0.0, 270.0),    # 点4
-    3: (0.4, 0.0, 0.0),      # 点1 (闭合)
+    1: (1.4, 1.8, -90),   # 点3  理论论文坐标
+    2: (1.4, 0.0, 180),    # 点4
+    3: (0.4, 0.0, 90),      # 点1 (闭合)
 }
 
 # 输出目录
@@ -257,7 +257,7 @@ class SlamNavTest(Node):
     # ══════════════════════════════════════════════════════════════════════
 
     def run(self):
-        # 自动启动建图+导航
+        # 自动启动建图+导航（启动失败，改为手动启动）
         # self._start_navigation()
 
         # 等待定位
@@ -315,12 +315,15 @@ class SlamNavTest(Node):
             if idx in GT_WAYPOINTS:
                 self._collect_static_at_waypoint(label)
 
+                # 用 print 确保提示在终端可见（ros2 logger 可能缓冲）
+                print(f"\n  >>> 点{label} 静态采集完成，按 Enter 开始输入地面真值...")
+                input()
+
                 exp_x, exp_y, exp_yaw = GT_WAYPOINTS[idx]
-                self.get_logger().info(
-                    f"  >>> 点{label} 理论论文坐标: ({exp_x}, {exp_y}, {exp_yaw}°)")
-                self.get_logger().info(
-                    f"      输入偏差 (dx dy yaw_actual°)，如: 0.02 -0.04 176")
-                gt_str = input("  GT (dx dy yaw_actual): ").strip()
+                print(f"  点{label} 理论论文坐标: ({exp_x}, {exp_y}, {exp_yaw}°)")
+                print(f"  输入偏差 (dx dy yaw_actual°)，如: 0.02 -0.04 176")
+                print("  GT (dx dy yaw_actual): ", end="", flush=True)
+                gt_str = sys.stdin.readline().strip()
                 try:
                     parts = gt_str.split()
                     dx = float(parts[0])
@@ -346,8 +349,8 @@ class SlamNavTest(Node):
 
                 # 仅 1→3 段 (idx==1, 到达点3): 手动输入碰撞
                 if idx == 1:
-                    self.get_logger().info("  >>> 1→3 是否碰撞? (0=无碰撞 1=碰撞):")
-                    coll_str = input("  碰撞 (0/1): ").strip()
+                    print("  >>> 1→3 是否碰撞? (0=无碰撞 1=碰撞): ", end="", flush=True)
+                    coll_str = sys.stdin.readline().strip()
                     self._collisions.append(int(coll_str) if coll_str in ("0", "1") else 0)
                 else:
                     self._collisions.append(0)
@@ -367,8 +370,11 @@ class SlamNavTest(Node):
         avg_mem = sum(self._mem_samples) / len(self._mem_samples)
         self.get_logger().info(f"平均性能: CPU {avg_cpu:.1f}%  MEM {avg_mem:.1f}% ({len(self._cpu_samples)} 次采样)")
         perf_path = os.path.join(PERF_LOG_DIR, f"{self._sensor}_perf.csv")
-        save_perf_samples(perf_path, self._cpu_samples, self._mem_samples)
-        self.get_logger().info(f"性能数据已保存: {perf_path}")
+        try:
+            save_perf_samples(perf_path, self._cpu_samples, self._mem_samples)
+            self.get_logger().info(f"性能数据已保存: {perf_path}")
+        except PermissionError:
+            self.get_logger().error(f"无写入权限: {perf_path}，请检查目录权限")
 
     # ══════════════════════════════════════════════════════════════════════
     # 导航
@@ -517,12 +523,15 @@ class SlamNavTest(Node):
         self._save_static_result(label, len(samples), rmse_pos, rmse_yaw, max_pos, max_yaw)
 
     def _save_raw_static(self, label, samples):
-        csv_logger = CSVLogger(
-            RAW_LOG_DIR, f"static_{self._sensor}_pt{label}",
-            ["x", "y", "yaw"])
-        for x, y, yaw in samples:
-            csv_logger.add_row([f"{x:.6f}", f"{y:.6f}", f"{yaw:.6f}"])
-        csv_logger.close()
+        try:
+            csv_logger = CSVLogger(
+                RAW_LOG_DIR, f"static_{self._sensor}_pt{label}",
+                ["x", "y", "yaw"])
+            for x, y, yaw in samples:
+                csv_logger.add_row([f"{x:.6f}", f"{y:.6f}", f"{yaw:.6f}"])
+            csv_logger.close()
+        except PermissionError:
+            self.get_logger().warn(f"原始静态数据保存失败（权限不足），跳过: {RAW_LOG_DIR}/")
 
     def _save_static_result(self, label, n_samples, rmse_pos, rmse_yaw, max_pos, max_yaw):
         """暂存静态结果到内存，全测试成功后才写入 CSV。"""
@@ -601,7 +610,8 @@ class SlamNavTest(Node):
                    "seg_3to4_pos_m", "seg_3to4_yaw_deg",
                    "seg_4to1_pos_m", "seg_4to1_yaw_deg",
                    "seg_1to3_pos_m", "seg_1to3_yaw_deg",
-                   "mean_pos_m", "mean_yaw_deg"]
+                   "mean_pos_m", "mean_yaw_deg",
+                   "collision_1to3"]
         logger = AppendingCSVLogger(CSV_RPE_PATH, headers)
         row = [f"{time.time():.3f}", self._sensor]
         for i in range(3):
@@ -609,6 +619,8 @@ class SlamNavTest(Node):
             row.append(f"{math.degrees(seg_errors_yaw[i]):.4f}")
         row.append(f"{mean_pos:.4f}")
         row.append(f"{math.degrees(mean_yaw):.4f}")
+        collision_val = self._collisions[0] if self._collisions else 0
+        row.append(str(collision_val))
         logger.add_row(row)
         logger.close()
 
@@ -618,29 +630,33 @@ class SlamNavTest(Node):
 
     def _write_results(self):
         """仅在全部成功时写入 CTE (3段) 和静态结果。"""
-        if self._segment_cte:
-            headers = ["timestamp", "sensor",
-                       "cte_1to3_rmse_m", "cte_1to3_max_m",
-                       "cte_3to4_rmse_m", "cte_3to4_max_m",
-                       "cte_4to1_rmse_m", "cte_4to1_max_m"]
-            logger = AppendingCSVLogger(CSV_CTE_PATH, headers)
-            row = [f"{time.time():.3f}", self._sensor]
-            for i in range(3):
-                if i < len(self._segment_cte):
-                    row.append(f"{self._segment_cte[i][0]:.4f}")
-                    row.append(f"{self._segment_cte[i][1]:.4f}")
-                else:
-                    row.extend(["", ""])
-            logger.add_row(row)
-            logger.close()
+        try:
+            if self._segment_cte:
+                headers = ["timestamp", "sensor",
+                           "cte_1to3_rmse_m", "cte_1to3_max_m",
+                           "cte_3to4_rmse_m", "cte_3to4_max_m",
+                           "cte_4to1_rmse_m", "cte_4to1_max_m"]
+                logger = AppendingCSVLogger(CSV_CTE_PATH, headers)
+                row = [f"{time.time():.3f}", self._sensor]
+                for i in range(3):
+                    if i < len(self._segment_cte):
+                        row.append(f"{self._segment_cte[i][0]:.4f}")
+                        row.append(f"{self._segment_cte[i][1]:.4f}")
+                    else:
+                        row.extend(["", ""])
+                logger.add_row(row)
+                logger.close()
 
-        self._write_static_csv()
+            self._write_static_csv()
 
-        self.get_logger().info(f"\n论文数据已保存到 {RESULTS_DIR}/")
-        self.get_logger().info(f"  RPE:    {CSV_RPE_PATH}")
-        self.get_logger().info(f"  CTE:    {CSV_CTE_PATH}")
-        self.get_logger().info(f"  Static: {CSV_STATIC_PATH}")
-        self.get_logger().info(f"原始轨迹 -> {RAW_LOG_DIR}/")
+            self.get_logger().info(f"\n论文数据已保存到 {RESULTS_DIR}/")
+            self.get_logger().info(f"  RPE:    {CSV_RPE_PATH}")
+            self.get_logger().info(f"  CTE:    {CSV_CTE_PATH}")
+            self.get_logger().info(f"  Static: {CSV_STATIC_PATH}")
+            self.get_logger().info(f"原始轨迹 -> {RAW_LOG_DIR}/")
+        except PermissionError as e:
+            self.get_logger().error(f"写入权限不足: {e}")
+            self.get_logger().error(f"请执行: chmod -R u+w {RESULTS_DIR}/ {RAW_LOG_DIR}/ {PERF_LOG_DIR}/")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
