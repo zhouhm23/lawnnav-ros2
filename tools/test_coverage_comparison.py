@@ -22,7 +22,7 @@ test_coverage_comparison.py — 全覆盖性能对照实验（论文表1）。
 import argparse, os, re, shlex, shutil, signal, subprocess, sys, time
 from pathlib import Path
 
-from test_utils import AppendingCSVLogger
+from test_utils import AppendingCSVLogger, sample_cpu_mem, save_perf_samples
 
 WS_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER_DIR = WS_ROOT / "launcher"
@@ -146,35 +146,6 @@ def _publish_rtabmap_map():
                    shell=True, executable="/bin/bash",
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
 
-def _sample_cpu_mem():
-    """采样系统整体 CPU 使用率 (%) 和内存使用率 (%)。返回 (cpu_pct, mem_pct)。"""
-    try:
-        # CPU: /proc/stat 第一行 (total cpu time)
-        with open("/proc/stat", "r") as f:
-            fields = f.readline().split()
-        # user nice system idle iowait irq softirq steal ...
-        cpu_times = list(map(int, fields[1:8]))
-        total = sum(cpu_times)
-        idle = cpu_times[3] + cpu_times[4]  # idle + iowait
-        cpu_pct = 100.0 * (1.0 - idle / total) if total > 0 else 0.0
-
-        # Memory: /proc/meminfo
-        meminfo = {}
-        with open("/proc/meminfo", "r") as f:
-            for line in f:
-                if "MemTotal:" in line:
-                    meminfo["total"] = int(line.split()[1])
-                elif "MemAvailable:" in line:
-                    meminfo["avail"] = int(line.split()[1])
-                if len(meminfo) >= 2:
-                    break
-        mem_pct = 100.0 * (1.0 - meminfo["avail"] / meminfo["total"]) if meminfo.get("total") else 0.0
-
-        return cpu_pct, mem_pct
-    except Exception:
-        return 0.0, 0.0
-
-
 def _parse_evaluator_log(sensor, algo, run_id):
     """从 evaluator 日志提取最终覆盖率。匹配 "Final coverage:" 或最后一条 "Coverage:" 行。"""
     log_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_evaluator.log")
@@ -211,16 +182,6 @@ def _save_coverage_result(sensor, algo, run_id, coverage_pct, elapsed_sec,
     ])
     logger.close()
     _ok(f"结果已保存: {csv_path} (run_id={logger.run_id})")
-
-
-def _save_cpu_mem_samples(sensor, algo, run_id, cpu_samples, mem_samples):
-    """保存原始 CPU/内存采样数据到 logs/coverage/。"""
-    csv_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_perf.csv")
-    with open(csv_path, "w") as f:
-        f.write("sample,cpu_pct,mem_pct\n")
-        for i, (cpu, mem) in enumerate(zip(cpu_samples, mem_samples), start=1):
-            f.write(f"{i},{cpu:.1f},{mem:.1f}\n")
-    _info(f"性能原始数据已保存: {csv_path}")
 
 
 def run_one(sensor, algo, run_id):
@@ -281,7 +242,7 @@ def run_one(sensor, algo, run_id):
             # 每 SAMPLE_INTERVAL 秒采样 CPU/内存
             now = time.time()
             if now - last_sample >= SAMPLE_INTERVAL:
-                cpu_pct, mem_pct = _sample_cpu_mem()
+                cpu_pct, mem_pct = sample_cpu_mem()
                 cpu_samples.append(cpu_pct)
                 mem_samples.append(mem_pct)
                 last_sample = now
@@ -291,7 +252,7 @@ def run_one(sensor, algo, run_id):
                 _info("path_coverage 已退出 (正常完成)")
                 success = True
                 # 最后一次采样
-                cpu_pct, mem_pct = _sample_cpu_mem()
+                cpu_pct, mem_pct = sample_cpu_mem()
                 cpu_samples.append(cpu_pct)
                 mem_samples.append(mem_pct)
                 break
@@ -323,7 +284,9 @@ def run_one(sensor, algo, run_id):
         _warn("未能从 evaluator 日志提取覆盖率，请手动检查日志")
 
     _save_coverage_result(sensor, algo, run_id, coverage_pct, elapsed, covered, total, cpu_avg, mem_avg)
-    _save_cpu_mem_samples(sensor, algo, run_id, cpu_samples, mem_samples)
+    perf_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_perf.csv")
+    save_perf_samples(perf_path, cpu_samples, mem_samples)
+    _info(f"性能原始数据已保存: {perf_path}")
     _ok(f"{label} 完成")
     return True
 

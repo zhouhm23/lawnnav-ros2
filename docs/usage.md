@@ -105,16 +105,18 @@ ros2 run nav2_map_server map_saver_cli -f /home/ubuntu/.ros/maps/vslam_map
 **阶段2：SLAM 定位验证（3传感器 × 3次 = 9次）**
 
 ```bash
-# 依次测三种传感器，各3次
+# 依次测三种传感器，各3次（脚本自动启动建图+导航，只需回车确认）
 python3 tools/test_slam_nav_test.py --sensor camera
 python3 tools/test_slam_nav_test.py --sensor lidar
 python3 tools/test_slam_nav_test.py --sensor vslam
 
-# 流程: 导航1→2→3→4→1闭合矩形
+# 流程: 自动启动 sensor → 等待就绪 → 导航三角形1→3→4→1
+#   - 1→3 对角线经过障碍物，测避障
 #   - 每段自动测CTE
-#   - 航点3,4,1暂停: 自动静态采集 + 手工输入地面真值
-#   - 航点3→4段输入是否碰撞
+#   - 航点3,4,1暂停: 自动静态采集 + 手工输入地面真值偏差
+#   - 1→3 段输入是否碰撞
 # 原始数据: logs/pose/    论文数据: tools/results/slam_*.csv
+# 仅在全部航点成功完成后才写入論文数据
 ```
 
 **阶段3：全覆盖性能对照实验（最多6组 × 3次 = 18次）**

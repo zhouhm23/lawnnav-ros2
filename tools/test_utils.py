@@ -136,6 +136,49 @@ class AppendingCSVLogger:
 
 
 # ---------------------------------------------------------------------------
+# System performance sampling
+# ---------------------------------------------------------------------------
+
+def sample_cpu_mem():
+    """采样系统整体 CPU 使用率 (%) 和内存使用率 (%)。
+
+    返回 (cpu_pct, mem_pct)。失败时返回 (0.0, 0.0)。
+    CPU 通过 /proc/stat 差值计算，内存通过 /proc/meminfo。
+    """
+    try:
+        with open("/proc/stat", "r") as f:
+            fields = f.readline().split()
+        cpu_times = list(map(int, fields[1:8]))
+        total = sum(cpu_times)
+        idle = cpu_times[3] + cpu_times[4]  # idle + iowait
+        cpu_pct = 100.0 * (1.0 - idle / total) if total > 0 else 0.0
+
+        meminfo = {}
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if "MemTotal:" in line:
+                    meminfo["total"] = int(line.split()[1])
+                elif "MemAvailable:" in line:
+                    meminfo["avail"] = int(line.split()[1])
+                if len(meminfo) >= 2:
+                    break
+        mem_pct = 100.0 * (1.0 - meminfo["avail"] / meminfo["total"]) if meminfo.get("total") else 0.0
+
+        return cpu_pct, mem_pct
+    except Exception:
+        return 0.0, 0.0
+
+
+def save_perf_samples(filepath, cpu_samples, mem_samples):
+    """保存原始 CPU/内存采样数据为 CSV。"""
+    os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+    with open(filepath, "w") as f:
+        f.write("sample,cpu_pct,mem_pct\n")
+        for i, (cpu, mem) in enumerate(zip(cpu_samples, mem_samples), start=1):
+            f.write(f"{i},{cpu:.1f},{mem:.1f}\n")
+
+
+# ---------------------------------------------------------------------------
 # StuckDetector
 # ---------------------------------------------------------------------------
 
