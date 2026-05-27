@@ -8,15 +8,15 @@ rtabmap:
     # Ground projection / detection
     # Ground height thresholds (reverted to previous values)
     'Grid/MinGroundHeight': '-0.20'
-    'Grid/MaxGroundHeight': '0.03'
-    'Grid/MaxGroundAngle': '15'
+    'Grid/MaxGroundHeight': '0.02'
+    'Grid/MaxGroundAngle': '20'
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'
     'Grid/3D': 'true'
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
-    'proj_max_ground_height': '0.20'
-    'proj_max_ground_angle': '15'
+    'proj_max_ground_height': '0.02'
+    'proj_max_ground_angle': '20'
     'RGBD/ProximityBySpace': 'true'
     'RGBD/ProximityPathMaxNeighbors': '5'
     'RGBD/NeighborLinkRefining': 'false'
@@ -24,6 +24,7 @@ rtabmap:
     'RGBD/LinearUpdate': '0.10'
     'RGBD/AngularUpdate': '0.10'
     'Vis/MaxFeatures': '800'
+    'Vis/MinInliers': '6' # Vis/MinInliers should be >= 6
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
@@ -31,9 +32,470 @@ rtabmap:
     'subscribe_rgbd': true
     'subscribe_depth': false
     'subscribe_scan': true  # 纯扫描模式：虚拟雷达做ICP定位（pointcloud_to_laserscan→/scan_raw）
-    'Reg/Strategy': '1'
+    'Reg/Strategy': '2'
     'Reg/Force3DoF': 'true'
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
     'grid_size': '20'
     'Grid/Sensor': 'true'
+
+# 以下是RTAB-Map参数列表，注释掉的参数可以根据需要启用和调整
+# BRIEF/Bytes # 特征描述子BRIEF的字节数
+# BRISK/Octaves # BRISK特征检测的octaves数
+# BRISK/PatternScale # BRISK特征模板尺度
+# BRISK/Thresh # BRISK特征检测阈值
+# Bayes/FullPredictionUpdate # 贝叶斯滤波器是否完全预测更新
+# Bayes/PredictionLC # 是否用预测进行回环检测
+# Bayes/VirtualPlacePriorThr # 虚拟地点先验阈值
+# Db/TargetVersion # 数据库目标版本
+# DbSqlite3/CacheSize # SQLite缓存大小(KB)
+# DbSqlite3/InMemory # 使用内存数据库
+# DbSqlite3/JournalMode # 日志模式(DELETE/WAL/MEMORY等)
+# DbSqlite3/Synchronous # 同步标志(OFF/NORMAL/FULL)
+# DbSqlite3/TempStore # 临时文件存储位置(0:文件 1:内存)
+# FAST/CV # FAST特征使用OpenCV实现
+# FAST/Gpu # FAST特征使用GPU
+# FAST/GpuKeypointsRatio # GPU提取的关键点比例
+# FAST/GridCols # FAST特征网格列数
+# FAST/GridRows # FAST特征网格行数
+# FAST/MaxThreshold # FAST最大阈值
+# FAST/MinThreshold # FAST最小阈值
+# FAST/NonmaxSuppression # 是否使用非极大值抑制
+# FAST/Threshold # FAST角点检测阈值
+# FREAK/NOctaves # FREAK描述子octave数
+# FREAK/OrientationNormalized # FREAK方向归一化
+# FREAK/PatternScale # FREAK模板尺度
+# FREAK/ScaleNormalized # FREAK尺度归一化
+# GFTT/BlockSize # GFTT角点检测的块大小
+# GFTT/K # GFTT的K参数(响应计算)
+# GFTT/MinDistance # GFTT最小角点间距
+# GFTT/QualityLevel # GFTT质量水平阈值
+# GFTT/UseHarrisDetector # 是否使用Harris检测器替代Shi-Tomasi
+# GMS/ThresholdFactor # GMS匹配的阈值因子
+# GMS/WithRotation # GMS启用旋转
+# GMS/WithScale # GMS启用尺度
+# GTSAM/IncRelinearizeSkip # GTSAM增量重线性化跳过步数
+# GTSAM/IncRelinearizeThreshold # GTSAM增量重线性化阈值
+# GTSAM/Incremental # 使用GTSAM增量优化
+# GTSAM/Optimizer # GTSAM优化器类型
+# Grid/3D # 生成三维占用网格
+# Grid/CellSize # 网格单元尺寸(m)
+# Grid/ClusterRadius # 点云聚类半径
+# Grid/DepthDecimation # 深度图下采样率
+# Grid/DepthRoiRatios # 深度图ROI比率 [x1,x2,y1,y2]
+# Grid/FlatObstacleDetected # 是否检测平坦障碍物
+# Grid/FootprintHeight # 机器人足迹高度
+# Grid/FootprintLength # 机器人足迹长度
+# Grid/FootprintWidth # 机器人足迹宽度
+# Grid/GroundIsObstacle # 地面作为障碍物
+# Grid/MapFrameProjection # 网格投影到地图坐标系
+# Grid/MaxGroundAngle # 地面最大倾斜角(度)
+# Grid/MaxGroundHeight # 地面点最大高度(m)
+# Grid/MaxObstacleHeight # 障碍物最大高度
+# Grid/MinClusterSize # 聚类最小点数
+# Grid/MinGroundHeight # 地面点最小高度(m)
+# Grid/NoiseFilteringMinNeighbors # 噪声滤波最少邻域点数
+# Grid/NoiseFilteringRadius # 噪声滤波半径
+# Grid/NormalK # 法向量估计的K近邻数
+# Grid/NormalsSegmentation # 基于法向量的地面分割
+# Grid/PreVoxelFiltering # 是否在生成网格前体素滤波
+# Grid/RangeMax # 激光/深度最大值(m)
+# Grid/RangeMin # 激光/深度最小值(m)
+# Grid/RayTracing # 使用射线追踪更新占用
+# Grid/Scan2dUnknownSpaceFilled # 2D扫描填充未知空间
+# Grid/ScanDecimation # 扫描点下采样率
+# Grid/Sensor # 0:激光扫描 1:深度点云
+# GridGlobal/AltitudeDelta # 全局网格高度变化阈值
+# GridGlobal/Eroded # 全局网格腐蚀
+# GridGlobal/FloodFillDepth # 全局网格洪水填充深度
+# GridGlobal/FootprintRadius # 全局网格足迹半径
+# GridGlobal/MaxNodes # 全局网格最大节点数
+# GridGlobal/MinSize # 全局网格最小尺寸
+# GridGlobal/OccupancyThr # 全局网格占用阈值
+# GridGlobal/ProbClampingMax # 概率钳制最大值
+# GridGlobal/ProbClampingMin # 概率钳制最小值
+# GridGlobal/ProbHit # 击中概率增量
+# GridGlobal/ProbMiss # 丢失概率减量
+# GridGlobal/UpdateError # 更新误差允许值
+# Icp/CCFilterOutFarthestPoints # ICP剔除最远点
+# Icp/CCMaxFinalRMS # ICP对应条件最大最终RMS
+# Icp/CCSamplingLimit # ICP采样限制
+# Icp/CorrespondenceRatio # ICP匹配比率
+# Icp/DebugExportFormat # ICP调试导出格式
+# Icp/DownsamplingStep # ICP下采样步长
+# Icp/Epsilon # ICP收敛阈值
+# Icp/FiltersEnabled # 启用ICP滤波器
+# Icp/Force4DoF # ICP强制4自由度(x,y,z,yaw)
+# Icp/Iterations # ICP迭代次数
+# Icp/MaxCorrespondenceDistance # ICP最大对应距离
+# Icp/MaxRotation # ICP最大旋转(度)
+# Icp/MaxTranslation # ICP最大平移(m)
+# Icp/OutlierRatio # ICP外点比率
+# Icp/PMConfig # ICP点面配置
+# Icp/PMMatcherEpsilon # ICP点面匹配误差
+# Icp/PMMatcherIntensity # ICP点面匹配强度
+# Icp/PMMatcherKnn # ICP点面匹配K近邻
+# Icp/PointToPlane # 使用点面ICP
+# Icp/PointToPlaneGroundNormalsUp # 点面ICP地面法向量向上
+# Icp/PointToPlaneK # 点面ICP的K近邻
+# Icp/PointToPlaneLowComplexityStrategy # 点面ICP低复杂度策略
+# Icp/PointToPlaneMinComplexity # 点面ICP最小复杂度
+# Icp/PointToPlaneRadius # 点面ICP搜索半径
+# Icp/RangeMax # ICP数据最大范围(m)
+# Icp/RangeMin # ICP数据最小范围(m)
+# Icp/ReciprocalCorrespondences # ICP互对应匹配
+# Icp/Strategy # ICP策略(0:ICP 1:ICP+点面)
+# Icp/VoxelSize # ICP体素滤波尺寸
+# ImuFilter/ComplementaryBiasAlpha # 互补滤波偏置平滑系数
+# ImuFilter/ComplementaryDoAdpativeGain # 互补滤波自适应增益
+# ImuFilter/ComplementaryDoBiasEstimation # 互补滤波估计偏置
+# ImuFilter/ComplementaryGainAcc # 互补滤波加速度计增益
+# ImuFilter/MadgwickGain # Madgwick滤波器增益
+# ImuFilter/MadgwickZeta # Madgwick滤波器Zeta
+# KAZE/Diffusivity # KAZE特征扩散系数
+# KAZE/Extended # KAZE扩展描述子
+# KAZE/NOctaveLayers # KAZE每octave层数
+# KAZE/NOctaves # KAZE octave数
+# KAZE/Threshold # KAZE特征检测阈值
+# KAZE/Upright # KAZE不使用旋转不变
+# Kp/BadSignRatio # 差签名比率阈值
+# Kp/ByteToFloat # 字节描述子转浮点
+# Kp/DetectorStrategy # 特征检测器策略
+# Kp/DictionaryPath # 字典路径
+# Kp/FlannRebalancingFactor # FLANN重平衡因子
+# Kp/GridCols # 特征提取网格列数
+# Kp/GridRows # 特征提取网格行数
+# Kp/IncrementalDictionary # 增量式字典
+# Kp/IncrementalFlann # 增量式FLANN
+# Kp/MaxDepth # 关键点最大深度(m)
+# Kp/MaxFeatures # 最大特征数
+# Kp/MinDepth # 关键点最小深度(m)
+# Kp/NNStrategy # 最近邻策略
+# Kp/NewWordsComparedTogether # 新词一起比较
+# Kp/NndrRatio # 次近邻比率
+# Kp/Parallelized # 多线程并行
+# Kp/RoiRatios # 感兴趣区域比率
+# Kp/SSC # 签名相似度约束
+# Kp/SubPixEps # 亚像素精度阈值
+# Kp/SubPixIterations # 亚像素迭代次数
+# Kp/SubPixWinSize # 亚像素窗口尺寸
+# Kp/TfIdfLikelihoodUsed # 使用TF-IDF似然
+# Marker/CornerRefinementMethod # 标记角点优化方法
+# Marker/Dictionary # 标记字典
+# Marker/Length # 标记边长(m)
+# Marker/MaxDepthError # 标记深度误差最大值
+# Marker/MaxRange # 标记最大检测距离
+# Marker/MinRange # 标记最小检测距离
+# Marker/Priors # 使用先验信息
+# Marker/PriorsVarianceAngular # 先验角度方差
+# Marker/PriorsVarianceLinear # 先验位置方差
+# Marker/VarianceAngular # 角度方差
+# Marker/VarianceLinear # 位置方差
+# Mem/BadSignaturesIgnored # 忽略差签名
+# Mem/BinDataKept # 保留二进制数据
+# Mem/CompressionParallelized # 图像压缩并行化
+# Mem/CovOffDiagIgnored # 忽略协方差非对角线元素
+# Mem/DepthAsMask # 深度作为掩模
+# Mem/GenerateIds # 生成节点ID
+# Mem/GlobalDescriptorStrategy # 全局描述子策略
+# Mem/ImageCompressionFormat # 图像压缩格式(.jpg/.png)
+# Mem/ImageKept # 保留图像数据
+# Mem/ImagePostDecimation # 图像后处理降采样
+# Mem/ImagePreDecimation # 图像预处理降采样
+# Mem/IncrementalMemory # 增量式工作记忆
+# Mem/InitWMWithAllNodes # 用所有节点初始化WM
+# Mem/IntermediateNodeDataKept # 保留中间节点数据
+# Mem/LaserScanDownsampleStepSize # 激光扫描降采样步长
+# Mem/LaserScanNormalK # 激光法向量K
+# Mem/LaserScanNormalRadius # 激光法向量半径
+# Mem/LaserScanVoxelSize # 激光扫描体素大小
+# Mem/LocalizationDataSaved # 保存定位数据到数据库
+# Mem/MapLabelsAdded # 添加地图标签
+# Mem/NotLinkedNodesKept # 保留未链接节点
+# Mem/RawDescriptorsKept # 保留原始描述子
+# Mem/RecentWmRatio # 近期工作记忆比率
+# Mem/ReduceGraph # 降低图复杂度
+# Mem/RehearsalIdUpdatedToNewOne # 演练时ID更新
+# Mem/RehearsalSimilarity # 演练相似度
+# Mem/RehearsalWeightIgnoredWhileMoving # 运动时忽略演练权重
+# Mem/RotateImagesUpsideUp # 旋转图像使朝上
+# Mem/STMSize # 短期记忆大小
+# Mem/SaveDepth16Format # 16位深度保存格式
+# Mem/StereoFromMotion # 从运动恢复立体
+# Mem/TransferSortingByWeightId # 按权重ID排序传递
+# Mem/UseOdomFeatures # 使用里程计特征
+# Mem/UseOdomGravity # 使用里程计重力方向
+# ORB/EdgeThreshold # ORB边缘阈值
+# ORB/FirstLevel # ORB第一层尺度
+# ORB/Gpu # ORB使用GPU
+# ORB/NLevels # ORB金字塔层数
+# ORB/PatchSize # ORB块大小
+# ORB/ScaleFactor # ORB尺度因子
+# ORB/ScoreType # ORB评分类型
+# ORB/WTA_K # ORB的WTA_K参数
+# Optimizer/Epsilon # 图优化收敛阈值
+# Optimizer/GravitySigma # 重力方向标准差
+# Optimizer/Iterations # 图优化迭代次数
+# Optimizer/LandmarksIgnored # 忽略路标节点
+# Optimizer/PriorsIgnored # 忽略先验约束
+# Optimizer/Robust # 鲁棒核函数
+# Optimizer/Strategy # 优化策略(0:g2o 1:GTSAM)
+# Optimizer/VarianceIgnored # 忽略方差
+# PyDescriptor/Dim # Python描述子维度
+# PyDescriptor/Path # Python描述子脚本路径
+# PyDetector/Cuda # Python检测器使用CUDA
+# PyDetector/Path # Python检测器脚本路径
+# PyMatcher/Cuda # Python匹配器使用CUDA
+# PyMatcher/Iterations # Python匹配器迭代次数
+# PyMatcher/Model # Python匹配器模型
+# PyMatcher/Path # Python匹配器脚本路径
+# PyMatcher/Threshold # Python匹配器阈值
+# RGBD/AggressiveLoopThr # 激进回环检测阈值
+# RGBD/AngularSpeedUpdate # 角速度更新阈值(rad/s)
+# RGBD/AngularUpdate # 角度变化添加节点阈值(rad)
+# RGBD/CreateOccupancyGrid # 创建占用网格
+# RGBD/Enabled # RGB-D模式启用
+# RGBD/ForceOdom3DoF # 强制里程计3自由度
+# RGBD/GoalReachedRadius # 目标到达半径
+# RGBD/GoalsSavedInUserData # 目标保存在用户数据
+# RGBD/InvertedReg # 颠倒配准(里程计修正)
+# RGBD/LinearSpeedUpdate # 线速度更新阈值(m/s)
+# RGBD/LinearUpdate # 位置变化添加节点阈值(m)
+# RGBD/LocalBundleOnLoopClosure # 回环时局部BA
+# RGBD/LocalImmunizationRatio # 局部免疫比率
+# RGBD/LocalRadius # 局部地图半径
+# RGBD/LocalizationPriorError # 定位先验误差
+# RGBD/LocalizationSmoothing # 定位平滑
+# RGBD/LoopClosureIdentityGuess # 回环时用相同位姿猜测
+# RGBD/LoopClosureReextractFeatures # 回环时重新提取特征
+# RGBD/LoopCovLimited # 回环协方差限制
+# RGBD/MarkerDetection # 检测标记
+# RGBD/MaxLocalRetrieved # 最大局部检索特征数
+# RGBD/MaxLoopClosureDistance # 最大回环检测距离
+# RGBD/MaxOdomCacheSize # 里程计缓存大小
+# RGBD/NeighborLinkRefining # 邻接链优化
+# RGBD/NewMapOdomChangeDistance # 新地图里程计变化距离
+# RGBD/OptimizeFromGraphEnd # 从图末尾开始优化
+# RGBD/OptimizeMaxError # 优化最大误差
+# RGBD/PlanAngularVelocity # 规划角速度
+# RGBD/PlanLinearVelocity # 规划线速度
+# RGBD/PlanStuckIterations # 规划卡住判定迭代数
+# RGBD/ProximityAngle # 邻近匹配角度阈值
+# RGBD/ProximityBySpace # 基于空间的邻近匹配
+# RGBD/ProximityByTime # 基于时间的邻近匹配
+# RGBD/ProximityGlobalScanMap # 邻近全局扫描地图
+# RGBD/ProximityMaxGraphDepth # 邻近最大图深度
+# RGBD/ProximityMaxPaths # 邻近最大路径数
+# RGBD/ProximityMergedScanCovFactor # 邻近合并扫描协方差因子
+# RGBD/ProximityOdomGuess # 邻近里程计猜测
+# RGBD/ProximityPathFilteringRadius # 邻近路径过滤半径
+# RGBD/ProximityPathMaxNeighbors # 邻近路径最大邻节点数
+# RGBD/ProximityPathRawPosesUsed # 邻近路径使用原始位姿
+# RGBD/ScanMatchingIdsSavedInLinks # 扫描匹配ID保存于链接
+# RGBD/StartAtOrigin # 从原点开始建图
+# Reg/Force3DoF # 注册强制3自由度(无滚转/俯仰)
+# Reg/RepeatOnce # 注册重复一次
+# Reg/Strategy # 注册策略 0:ICP 1:视觉 2:视觉+ICP
+# Rtabmap/ComputeRMSE # 计算RMSE
+# Rtabmap/CreateIntermediateNodes # 创建中间节点
+# Rtabmap/DetectionRate # 回环检测频率(Hz)
+# Rtabmap/ImageBufferSize # 图像缓冲大小
+# Rtabmap/ImagesAlreadyRectified # 图像已校正
+# Rtabmap/LoopGPS # GPS回环检测
+# Rtabmap/LoopRatio # 回环检测比率
+# Rtabmap/LoopThr # 回环检测阈值
+# Rtabmap/MaxRepublished # 最大重新发布数
+# Rtabmap/MaxRetrieved # 最大检索词袋数量
+# Rtabmap/MemoryThr # 内存使用阈值
+# Rtabmap/PublishLastSignature # 发布最近签名
+# Rtabmap/PublishLikelihood # 发布似然
+# Rtabmap/PublishPdf # 发布概率分布
+# Rtabmap/PublishRAMUsage # 发布RAM使用情况
+# Rtabmap/PublishStats # 发布统计信息
+# Rtabmap/RectifyOnlyFeatures # 只矫正特征点
+# Rtabmap/SaveWMState # 保存工作记忆状态
+# Rtabmap/StartNewMapOnGoodSignature # 好签名时开始新地图
+# Rtabmap/StartNewMapOnLoopClosure # 回环时开始新地图
+# Rtabmap/StatisticLogged # 统计数据是否记录
+# Rtabmap/StatisticLoggedHeaders # 记录统计的标题
+# Rtabmap/StatisticLogsBufferedInRAM # 统计日志缓存在RAM
+# Rtabmap/TimeThr # 时间阈值
+# Rtabmap/VirtualPlaceLikelihoodRatio # 虚拟地点似然比率
+# Rtabmap/WorkingDirectory # 工作目录
+# SIFT/ContrastThreshold # SIFT对比度阈值
+# SIFT/EdgeThreshold # SIFT边缘阈值
+# SIFT/NFeatures # SIFT特征数
+# SIFT/NOctaveLayers # SIFT每octave层数
+# SIFT/RootSIFT # 使用RootSIFT描述子
+# SIFT/Sigma # SIFT高斯平滑sigma
+# SURF/Extended # SURF 128维扩展描述子
+# SURF/GpuKeypointsRatio # GPU提取特征点比率
+# SURF/GpuVersion # GPU版本
+# SURF/HessianThreshold # SURF Hessian阈值
+# SURF/OctaveLayers # SURF每octave层数
+# SURF/Octaves # SURF octave数
+# SURF/Upright # SURF不使用旋转不变
+# Stereo/DenseStrategy # 立体稠密匹配策略
+# Stereo/Eps # 立体匹配终止准则阈值
+# Stereo/Iterations # 立体匹配迭代次数
+# Stereo/MaxDisparity # 最大视差
+# Stereo/MaxLevel # 最大金字塔等级
+# Stereo/MinDisparity # 最小视差
+# Stereo/OpticalFlow # 使用光流
+# Stereo/SSD # SSD误差阈值
+# Stereo/WinHeight # 窗口高度
+# Stereo/WinWidth # 窗口宽度
+# StereoBM/BlockSize # StereoBM块大小
+# StereoBM/Disp12MaxDiff # 左右视差最大允许差
+# StereoBM/MinDisparity # 最小视差
+# StereoBM/NumDisparities # 视差数
+# StereoBM/PreFilterCap # 预滤波截断值
+# StereoBM/PreFilterSize # 预滤波尺寸
+# StereoBM/SpeckleRange # 散斑范围
+# StereoBM/SpeckleWindowSize # 散斑窗口尺寸
+# StereoBM/TextureThreshold # 纹理阈值
+# StereoBM/UniquenessRatio # 唯一性比率
+# StereoSGBM/BlockSize # SGBM块大小
+# StereoSGBM/Disp12MaxDiff # 左右视差最大差
+# StereoSGBM/MinDisparity # 最小视差
+# StereoSGBM/Mode # SGBM模式
+# StereoSGBM/NumDisparities # 视差数
+# StereoSGBM/P1 # 平滑参数P1
+# StereoSGBM/P2 # 平滑参数P2
+# StereoSGBM/PreFilterCap # 预滤波截断值
+# StereoSGBM/SpeckleRange # 散斑范围
+# StereoSGBM/SpeckleWindowSize # 散斑窗口尺寸
+# StereoSGBM/UniquenessRatio # 唯一性比率
+# SuperPoint/Cuda # SuperPoint使用CUDA
+# SuperPoint/ModelPath # SuperPoint模型路径
+# SuperPoint/NMS # SuperPoint非极大值抑制
+# SuperPoint/NMSRadius # NMS半径
+# SuperPoint/Threshold # SuperPoint阈值
+# VhEp/Enabled # 启用视觉水平面极线约束
+# VhEp/MatchCountMin # 最小匹配数
+# VhEp/RansacParam1 # RANSAC参数1
+# VhEp/RansacParam2 # RANSAC参数2
+# Vis/BundleAdjustment # 视觉BA(局部优化)
+# Vis/CorFlowEps # 视觉特征流收敛阈值
+# Vis/CorFlowIterations # 视觉特征流迭代次数
+# Vis/CorFlowMaxLevel # 视觉特征流金字塔最大层
+# Vis/CorFlowWinSize # 视觉特征流窗口尺寸
+# Vis/CorGuessMatchToProjection # 预测匹配投影
+# Vis/CorGuessWinSize # 预测匹配窗口尺寸
+# Vis/CorNNDR # 视觉匹配最近邻比率
+# Vis/CorNNType # 视觉匹配NN类型
+# Vis/CorType # 视觉匹配类型
+# Vis/DepthAsMask # 深度作为掩模
+# Vis/EpipolarGeometryVar # 极线几何方差
+# Vis/EstimationType # 位姿估计类型(0:3D 1:2D 2:5DoF等)
+# Vis/FeatureType # 视觉特征类型(0:SIFT 1:SURF等)
+# Vis/ForwardEstOnly # 仅前向估计
+# Vis/GridCols # 视觉特征提取网格列数
+# Vis/GridRows # 视觉特征提取网格行数
+# Vis/InlierDistance # 内点距离阈值
+# Vis/Iterations # 视觉估计迭代次数
+# Vis/MaxDepth # 视觉最大深度(m)
+# Vis/MaxFeatures # 视觉最大特征数
+# Vis/MeanInliersDistance # 平均内点距离
+# Vis/MinDepth # 视觉最小深度(m)
+# Vis/MinInliers # 视觉最小内点数
+# Vis/MinInliersDistribution # 视觉最小内点分布
+# Vis/PnPFlags # PnP标志
+# Vis/PnPMaxVariance # PnP最大方差
+# Vis/PnPRefineIterations # PnP优化迭代次数
+# Vis/PnPReprojError # PnP重投影误差
+# Vis/PnPSamplingPolicy # PnP采样策略
+# Vis/PnPSplitLinearCovComponents # PnP分割线性协方差成分
+# Vis/PnPVarianceMedianRatio # PnP方差中位数比率
+# Vis/RefineIterations # 视觉优化迭代次数
+# Vis/RoiRatios # 视觉ROI比率
+# Vis/SSC # 视觉签名相似度约束
+# Vis/SubPixEps # 视觉亚像素精度
+# Vis/SubPixIterations # 视觉亚像素迭代次数
+# Vis/SubPixWinSize # 视觉亚像素窗口尺寸
+# approx_sync # 是否使用近似时间同步
+# cloud_output_voxelized # 输出点云是否体素滤波
+# cloud_subtract_filtering # 点云减法滤波
+# cloud_subtract_filtering_min_neighbors # 减法滤波最小邻域数
+# config_path # RTAB-Map配置文件路径
+# database_path # 数据库文件路径
+# diagnostic_updater.period # 诊断更新周期(s)
+# diagnostic_updater.use_fqn # 诊断是否使用全限定节点名
+# frame_id # 机器人基坐标系frame (base_link)
+# g2o/Baseline # g2o基线距离(立体视觉)
+# g2o/Optimizer # g2o优化器类型
+# g2o/PixelVariance # g2o像素方差
+# g2o/RobustKernelDelta # g2o鲁棒核函数delta
+# g2o/Solver # g2o求解器类型
+# gen_depth # 从扫描生成深度图
+# gen_depth_decimation # 深度生成降采样
+# gen_depth_fill_holes_error # 深度补洞误差阈值
+# gen_depth_fill_holes_size # 深度补洞尺寸
+# gen_depth_fill_iterations # 深度补洞迭代次数
+# gen_scan # 从深度/点云生成2D扫描
+# gen_scan_max_depth # 生成扫描的最大深度
+# gen_scan_min_depth # 生成扫描的最小深度
+# ground_truth_base_frame_id # 真值基准坐标系
+# ground_truth_frame_id # 真值物体坐标系
+# initial_pose # 初始位姿 [x y z roll pitch yaw]
+# is_rtabmap_paused # RTAB-Map是否暂停
+# landmark_angular_variance # 路标角度方差
+# landmark_linear_variance # 路标位置方差
+# latch # 是否latch发布地图
+# loc_thr # 定位时视觉匹配阈值
+# log_to_rosout_level # 输出到rosout的日志等级
+# map_always_update # 地图持续更新
+# map_cleanup # 地图清理(去噪声)
+# map_empty_ray_tracing # 空射线追踪
+# map_filter_angle # 地图过滤角度
+# map_filter_radius # 地图过滤半径
+# map_frame_id # 地图坐标系frame
+# octomap_tree_depth # 八叉树地图深度
+# odom_frame_id # 里程计坐标系frame
+# odom_frame_id_init # 初始化里程计坐标系
+# odom_sensor_sync # 用里程计同步传感器数据(而非时间戳对齐)
+# odom_tf_angular_variance # 里程计TF角度方差
+# odom_tf_linear_variance # 里程计TF位置方差
+# pub_loc_pose_only_when_localizing # 仅在定位模式发布位姿
+# publish_tf # 是否发布TF
+# qos # 默认QoS
+# qos_camera_info # 相机信息QoS
+# qos_gps # GPS QoS
+# qos_image # 图像QoS
+# qos_imu # IMU QoS
+# qos_odom # 里程计QoS
+# qos_overrides./parameter_events.publisher.depth # 参数事件发布者队列深度覆盖
+# qos_overrides./parameter_events.publisher.durability # 参数事件发布者持久性覆盖
+# qos_overrides./parameter_events.publisher.history # 参数事件发布者历史覆盖
+# qos_overrides./parameter_events.publisher.reliability # 参数事件发布者可靠性覆盖
+# qos_overrides./tf.publisher.depth # TF发布者队列深度覆盖
+# qos_overrides./tf.publisher.durability # TF发布者持久性覆盖
+# qos_overrides./tf.publisher.history # TF发布者历史覆盖
+# qos_overrides./tf.publisher.reliability # TF发布者可靠性覆盖
+# qos_scan # 激光扫描QoS
+# qos_sensor_data # 传感器数据QoS
+# qos_user_data # 用户数据QoS
+# queue_size # 话题队列大小
+# rgbd_cameras # RGB-D相机数量
+# scan_cloud_is_2d # 扫描点云是2D
+# scan_cloud_max_points # 扫描点云最大点数
+# stereo_to_depth # 立体视觉转深度
+# subscribe_depth # 订阅深度话题
+# subscribe_odom # 订阅里程计话题
+# subscribe_odom_info # 订阅里程计信息话题
+# subscribe_rgb # 订阅RGB话题
+# subscribe_rgbd # 订阅RGB-D同步话题
+# subscribe_scan # 订阅激光扫描话题
+# subscribe_scan_cloud # 订阅激光点云话题
+# subscribe_scan_descriptor # 订阅激光描述子话题
+# subscribe_sensor_data # 订阅传感器数据话题(异步输入)
+# subscribe_stereo # 订阅立体视觉话题
+# subscribe_user_data # 订阅用户数据话题
+# sync_queue_size # 同步队列大小
+# tf_delay # TF发布时间延迟(s)
+# tf_tolerance # TF时间容忍(s)
+# topic_queue_size # 话题队列大小(独立)
+# use_action_for_goal # 使用action接口发送目标
+# use_saved_map # 使用保存的地图(定位模式)
+# use_sim_time # 使用仿真时间
+# wait_for_transform # 等待TF变换的时间(s)

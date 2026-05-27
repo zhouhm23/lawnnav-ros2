@@ -15,6 +15,7 @@ def launch_setup(context):
     use_joy = LaunchConfiguration('use_joy', default='true').perform(context)
     use_depth_camera = LaunchConfiguration('use_depth_camera', default='false')
     use_lidar = LaunchConfiguration('use_lidar', default='false')
+    enable_odom = LaunchConfiguration('enable_odom', default='true')
     master_name = LaunchConfiguration('master_name', default='/').perform(context)
     robot_name = LaunchConfiguration('robot_name', default='/').perform(context)
     depth_camera_name = LaunchConfiguration('depth_camera_name', default='depth_cam').perform(context)
@@ -27,6 +28,7 @@ def launch_setup(context):
     use_joy_arg = DeclareLaunchArgument('use_joy', default_value=use_joy)
     use_depth_camera_arg = DeclareLaunchArgument('use_depth_camera', default_value=use_depth_camera)
     use_lidar_arg = DeclareLaunchArgument('use_lidar', default_value=use_lidar)
+    enable_odom_arg = DeclareLaunchArgument('enable_odom', default_value='true')
     action_name_arg = DeclareLaunchArgument('action_name', default_value=action_name)
 
     max_linear_sim = '0.7'
@@ -83,6 +85,7 @@ def launch_setup(context):
             'map_frame': map_frame,
             'imu_frame': imu_frame,
             'use_sim_time': use_sim_time,
+            'enable_odom': enable_odom,
         }.items()
     )
 
@@ -127,7 +130,7 @@ def launch_setup(context):
 
     return [
         sim_arg, master_name_arg, robot_name_arg, depth_camera_name_arg,
-        use_joy_arg, use_depth_camera_arg, use_lidar_arg, action_name_arg,
+        use_joy_arg, use_depth_camera_arg, use_lidar_arg, enable_odom_arg, action_name_arg,
         controller_launch,
         depth_camera_launch,
         lidar_launch,

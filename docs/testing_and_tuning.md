@@ -705,3 +705,4 @@ ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
 未来工作：
 1. 更新用户程序和测试程序的引用
 2. 设计最优实验方案
+### 5.27

@@ -3,7 +3,7 @@ depth_to_scan:
   ros__parameters:
     target_frame: "base_footprint"
     transform_tolerance: 0.1
-    min_height: 0.03      # 低于此高度的点被过滤（地面）
+    min_height: 0.02      # 低于此高度的点被过滤（地面）
     max_height: 0.30      # 高于此高度的点被过滤（天花板/桌面）
     angle_min: -1.57      # -90度
     angle_max: 1.57       # +90度

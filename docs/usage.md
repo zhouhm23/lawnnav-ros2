@@ -32,7 +32,8 @@ bash launcher/start.sh              # Shell 兼容包装
 ### 终端 1：
 
 ```bash
-sudo ~/.stop_ros.sh
+# 建议别用sudo，以免杀了关键进程和终端本身
+~/.stop_ros.sh 
 rm -f /home/ubuntu/.ros/rtabmap.db
 # (a) 单相机
 ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 (localization:=false)

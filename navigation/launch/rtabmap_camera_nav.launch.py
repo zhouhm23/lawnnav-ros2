@@ -66,7 +66,24 @@ def launch_setup(context):
             'robot_name': robot_name,
             'action_name': 'horizontal',
             'use_depth_camera': 'true',   # 适配新 robot.launch.py 双 bool
+            'enable_odom': 'false',       # 禁用 controller 内置 EKF，用本文件专属 EKF
         }.items(),
+    )
+
+    # ── (a) 单相机专属 EKF: pose 差分模式，修正系数生效 ──
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[os.path.join('/home/ubuntu/ros2_ws/src/driver/controller/config', 'ekf_camera.yaml'),
+                    {'use_sim_time': use_sim_time == 'true'}],
+        remappings=[
+            ('/tf', 'tf'),
+            ('/tf_static', 'tf_static'),
+            ('odometry/filtered', 'odom'),
+            ('cmd_vel', 'controller/cmd_vel'),
+        ],
     )
 
     navigation_launch = IncludeLaunchDescription(
@@ -94,6 +111,7 @@ def launch_setup(context):
      actions=[
          PushRosNamespace(robot_name),
          base_launch,
+         ekf_node,
          TimerAction(
              period=10.0,
              actions=[navigation_launch],
