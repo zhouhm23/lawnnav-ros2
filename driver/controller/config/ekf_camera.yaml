@@ -79,14 +79,14 @@
       # default values, and must be specified.
       odom0: odom_raw
 
-      # 改: 使用 odom_raw 的 pose (x,y) + 差分模式。
+      # 改: 使用 odom_raw 的 pose (x,y,yaw) + 差分模式。
       # odom_publisher_node 已将 linear_correction_factor 乘到 pose 上，
       # 但 twist 是裸指令速度不含修正。原配置只读 twist → 修正系数无效。
       # 改为读 pose + differential:true → EKF 自动 Δpose/Δt 得到已修正的速度。
-      # yaw 不从 odom 取，IMU (imu0) 已提供 yaw+vyaw。
+      # 含 yaw: odom_raw 角度精度 1°/1080°，远优于 IMU 动态漂移
       # 顺序: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
       odom0_config: [true, true, false,
-                     false, false, false,
+                     false, false, true,
                      false, false, false,
                      false, false, false,
                      false, false, false]

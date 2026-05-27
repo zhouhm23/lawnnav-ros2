@@ -394,28 +394,6 @@ launcher 的 `save` 命令同时保存 rtabmap.db + grid map (pgm+yaml)，`cover
 ### 第三次测试：
 
 1.
-[OK] 鍦板浘宸叉仮澶? test_map
-[INFO] 鍦板浘: test_map, 鍖哄煙: test_180x240.yaml
-[INFO] === 鍚姩绾畾浣嶈鐩栨ā寮?(localization:=true) ===
-[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
-[INFO] 鍚姩 navigation
-[INFO] 鍚姩 map_server 鍙戝竷鏍呮牸鍦板浘...
-[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
-[INFO] 鍚姩 map_server
-[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
-[INFO] 鍚姩 rviz
-[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
-[INFO] 鍚姩 path_coverage
-[WARN] /home/ubuntu/ros2_ws/src/install/local_setup.sh not found, continuing without workspace setup
-[INFO] 鍚姩 evaluator
-[INFO] 鍙戝竷瑕嗙洊鍖哄煙...
-鍙戝竷鍖哄煙 'test_180x240' (4 椤剁偣) 鍒?/clicked_point ...
-  椤剁偣 1: (0.000, 0.400)
-  椤剁偣 2: (2.400, 0.400)
-  椤剁偣 3: (2.400, -1.400)
-  椤剁偣 4: (0.000, -1.400)
-  闂悎 鈫?澶氳竟褰㈠簲宸插畬鎴?瀹屾垚 鉁?[OK] 瑕嗙洊妯″紡灏辩华 鈥?鍖哄煙宸插彂甯冿紝寮€濮嬭鐩栦綔涓?
-
 运行脚本没必要local_setup.sh，这个是编译后才需要的
 2.
 > mapping # 建图的时候，地图会突然出现小白点，然后膨胀成障碍物：我没有改任何导航代码，可能是相机有污渍
@@ -706,3 +684,4 @@ ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
 1. 更新用户程序和测试程序的引用
 2. 设计最优实验方案
 ### 5.27
+小车没走准的原因是ekf只订阅了雷达odom_rf2o，odom_raw只提供速度，没用到修正系数->有点突破了，误差控制到2cm以内了，但刚测两个点就崩了，小车一直停不下来，正在进一步排查

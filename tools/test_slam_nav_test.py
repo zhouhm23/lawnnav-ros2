@@ -59,6 +59,8 @@ STATIC_DURATION_SEC = 5.0
 STATIC_RATE_HZ = 5.0
 PERF_SAMPLE_INTERVAL = 10.0   # 性能采样间隔 (秒)
 PERF_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/slam_perf"
+WP_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/waypoints"
+TRAJ_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/trajectory"
 CTE_SAMPLE_HZ = 2.0              # CTE 轨迹采样频率
 NAV_STARTUP_WAIT = 15.0       # 建图+导航启动等待 (lidar 保底15s)
 CAR_HALF_LENGTH = 0.106       # 车体半长 (m)，车中心→车尾中点的偏移
@@ -76,7 +78,7 @@ LIDAR_NAV_CMD  = "ros2 launch navigation slam_toolbox_lidar_nav.launch.py map:="
 # 各传感器对应的定位 topic
 SENSOR_POSE_TOPIC = {
     "camera": "/localization_pose",
-    "lidar":  "/localization_pose",
+    "lidar":  "/odom",
     "vslam":  "/localization_pose",
 }
 
@@ -104,10 +106,13 @@ RAW_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/pose"
 CSV_RPE_PATH = os.path.join(RESULTS_DIR, "slam_rpe_results.csv")
 CSV_CTE_PATH = os.path.join(RESULTS_DIR, "slam_cte_results.csv")
 CSV_STATIC_PATH = os.path.join(RESULTS_DIR, "slam_static_results.csv")
+CSV_PERF_PATH = os.path.join(RESULTS_DIR, "slam_perf_results.csv")
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(RAW_LOG_DIR, exist_ok=True)
 os.makedirs(PERF_LOG_DIR, exist_ok=True)
+os.makedirs(WP_LOG_DIR, exist_ok=True)
+os.makedirs(TRAJ_LOG_DIR, exist_ok=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -157,6 +162,7 @@ class SlamNavTest(Node):
         self._segment_cte = []
         self._collisions = []
         self._static_results = []
+        self._waypoint_rows = []    # 航点原始记录（含用户 GT 输入）
         self._cpu_samples = []
         self._mem_samples = []
         self._success = False
@@ -347,6 +353,15 @@ class SlamNavTest(Node):
                 gt_map = paper_to_map(gt_x_p, gt_y_p, gt_yaw_deg_p)
                 self._gt_poses_map.append(gt_map)
 
+                # ── 记录航点原始数据（含用户 GT 输入，可复核）──
+                self._waypoint_rows.append({
+                    "label": label,
+                    "slam_x": cp[0], "slam_y": cp[1], "slam_yaw_deg": math.degrees(cp[2]),
+                    "gt_input_dx": dx, "gt_input_dy": dy, "gt_input_yaw": yaw_actual,
+                    "gt_paper_x": gt_x_p, "gt_paper_y": gt_y_p, "gt_paper_yaw_deg": gt_yaw_deg_p,
+                    "gt_map_x": gt_map[0], "gt_map_y": gt_map[1], "gt_map_yaw_deg": math.degrees(gt_map[2]),
+                })
+
                 # 仅 1→3 段 (idx==1, 到达点3): 手动输入碰撞
                 if idx == 1:
                     print("  >>> 1→3 是否碰撞? (0=无碰撞 1=碰撞): ", end="", flush=True)
@@ -357,6 +372,7 @@ class SlamNavTest(Node):
 
         # ── 全部航点完成 ───────────────────────────────────────────
         self._success = True
+        self._save_waypoints()
         self._compute_and_log_rpe()
         self._write_results()
         self._save_perf_results()
@@ -369,12 +385,62 @@ class SlamNavTest(Node):
         avg_cpu = sum(self._cpu_samples) / len(self._cpu_samples)
         avg_mem = sum(self._mem_samples) / len(self._mem_samples)
         self.get_logger().info(f"平均性能: CPU {avg_cpu:.1f}%  MEM {avg_mem:.1f}% ({len(self._cpu_samples)} 次采样)")
+
+        # 原始采样 → logs/
         perf_path = os.path.join(PERF_LOG_DIR, f"{self._sensor}_perf.csv")
         try:
             save_perf_samples(perf_path, self._cpu_samples, self._mem_samples)
-            self.get_logger().info(f"性能数据已保存: {perf_path}")
+            self.get_logger().info(f"原始采样已保存: {perf_path}")
         except PermissionError:
-            self.get_logger().error(f"无写入权限: {perf_path}，请检查目录权限")
+            self.get_logger().error(f"无写入权限: {perf_path}")
+
+        # 均值 → tools/results/
+        try:
+            headers = ["timestamp", "sensor", "avg_cpu_pct", "avg_mem_pct", "num_samples"]
+            logger = AppendingCSVLogger(CSV_PERF_PATH, headers)
+            row = [f"{time.time():.3f}", self._sensor,
+                   f"{avg_cpu:.1f}", f"{avg_mem:.1f}", str(len(self._cpu_samples))]
+            logger.add_row(row)
+            logger.close()
+            self.get_logger().info(f"性能均值已保存: {CSV_PERF_PATH}")
+        except PermissionError:
+            self.get_logger().error(f"无写入权限: {CSV_PERF_PATH}")
+
+    def _save_trajectory(self, seg_idx, traj):
+        """保存逐段导航原始轨迹到 logs/trajectory/。"""
+        if not traj:
+            return
+        s, e = SEGMENT_NAMES[seg_idx]
+        ts = int(time.time())
+        path = os.path.join(TRAJ_LOG_DIR, f"traj_{self._sensor}_seg{s}-{e}_{ts}.csv")
+        try:
+            with open(path, "w") as f:
+                f.write("t,x,y,yaw\n")
+                for t, px, py, pyaw in traj:
+                    f.write(f"{t:.3f},{px:.6f},{py:.6f},{pyaw:.6f}\n")
+            self.get_logger().info(f"  轨迹已保存: {path}")
+        except PermissionError:
+            self.get_logger().warn(f"轨迹保存失败(权限): {path}")
+
+    def _save_waypoints(self):
+        """保存航点原始数据（含 SLAM 位姿 + 用户 GT 输入）到 logs/waypoints/。"""
+        if not self._waypoint_rows:
+            return
+        ts = int(time.time())
+        path = os.path.join(WP_LOG_DIR, f"waypoints_{self._sensor}_{ts}.csv")
+        headers = ["label", "slam_x", "slam_y", "slam_yaw_deg",
+                   "gt_input_dx", "gt_input_dy", "gt_input_yaw_deg",
+                   "gt_paper_x", "gt_paper_y", "gt_paper_yaw_deg",
+                   "gt_map_x", "gt_map_y", "gt_map_yaw_deg"]
+        try:
+            with open(path, "w") as f:
+                f.write(",".join(headers) + "\n")
+                for w in self._waypoint_rows:
+                    row = [str(w[h]) for h in headers]
+                    f.write(",".join(row) + "\n")
+            self.get_logger().info(f"航点原始数据已保存: {path}")
+        except PermissionError:
+            self.get_logger().warn(f"航点保存失败(权限): {path}")
 
     # ══════════════════════════════════════════════════════════════════════
     # 导航
@@ -427,6 +493,7 @@ class SlamNavTest(Node):
 
         if record_traj and traj:
             self._segment_trajectories.append(traj)
+            self._save_trajectory(len(self._segment_trajectories) - 1, traj)
             self.get_logger().info(f"  轨迹采样: {len(traj)} 点")
 
         self.get_logger().info("  目标已到达 ✓")
@@ -653,6 +720,7 @@ class SlamNavTest(Node):
             self.get_logger().info(f"  RPE:    {CSV_RPE_PATH}")
             self.get_logger().info(f"  CTE:    {CSV_CTE_PATH}")
             self.get_logger().info(f"  Static: {CSV_STATIC_PATH}")
+            self.get_logger().info(f"  Perf:   {CSV_PERF_PATH}")
             self.get_logger().info(f"原始轨迹 -> {RAW_LOG_DIR}/")
         except PermissionError as e:
             self.get_logger().error(f"写入权限不足: {e}")

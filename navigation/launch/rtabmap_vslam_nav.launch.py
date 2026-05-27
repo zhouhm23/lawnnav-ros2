@@ -76,24 +76,7 @@ def launch_setup(context):
             'use_depth_camera': 'true',
             'use_lidar': 'true',
             'action_name': 'horizontal',
-            'enable_odom': 'false',       # 禁用 controller 内置 EKF，用本文件专属 EKF
         }.items(),
-    )
-
-    # ── (c) 视觉+雷达专属 EKF: 出厂 twist 模式 ──
-    ekf_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_filter_node',
-        output='screen',
-        parameters=[os.path.join('/home/ubuntu/ros2_ws/src/driver/controller/config', 'ekf_vslam.yaml'),
-                    {'use_sim_time': use_sim_time == 'true'}],
-        remappings=[
-            ('/tf', 'tf'),
-            ('/tf_static', 'tf_static'),
-            ('odometry/filtered', 'odom'),
-            ('cmd_vel', 'controller/cmd_vel'),
-        ],
     )
 
     navigation_launch = IncludeLaunchDescription(
@@ -122,7 +105,6 @@ def launch_setup(context):
         actions=[
             PushRosNamespace(robot_name),
             base_launch,
-            ekf_node,
             TimerAction(
                 period=10.0,
                 actions=[navigation_launch],
