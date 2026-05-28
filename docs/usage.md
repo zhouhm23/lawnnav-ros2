@@ -118,6 +118,7 @@ python3 tools/test_slam_nav_test.py --sensor vslam
 #   - 1→3 段输入是否碰撞
 # 原始数据: logs/pose/    论文数据: tools/results/slam_*.csv
 # 仅在全部航点成功完成后才写入論文数据
+python3 tools/log_simplify.py --info # 问题排查，有时候关键报错不一定是error
 ```
 
 **阶段3：全覆盖性能对照实验（最多6组 × 3次 = 18次）**

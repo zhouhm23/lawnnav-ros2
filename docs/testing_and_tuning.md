@@ -652,6 +652,18 @@ Could not determine the type for the passed topic
 sudo ~/.stop_ros.sh
 export ROS_LOG_DIR=~/ros2_ws/src/logs/ros
 
+# (a) 单相机
+ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 (localization:=false)
+ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true # 导航
+
+# (b) 单雷达
+ros2 launch slam slam_toolbox_lidar_slam.launch.py
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py
+
+# (c) 视觉+雷达
+ros2 launch navigation rtabmap_vslam_nav.launch.py                    # 建图 (localization:=false)
+ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
+
 python3 tools/log_simplify.py --info
 # 以上结果均为我通过rviz观察所得
 # 改完源码要编译
@@ -668,20 +680,17 @@ fix：目前仅融合方案和单雷达正常，单视觉失败
    RTAB-Map 在建图阶段可灵活组合雷达、视觉或两者并用，只需修改 YAML 配置中的订阅话题即可。导航时若需要让深度相机参与代价地图构建，可使用 `pointcloud_to_laserscan` 将点云转为 `/scan`，与真实雷达统一输入到 Nav2 的代价地图中。
 
 17:50 fix：三种方案基本功能正常，但有些细节需要优化
-# (a) 单相机
-ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 (localization:=false)
-ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true # 导航
 
-# (b) 单雷达
-ros2 launch slam slam_toolbox_lidar_slam.launch.py
-ros2 launch navigation slam_toolbox_lidar_nav.launch.py
-
-# (c) 视觉+雷达
-ros2 launch navigation rtabmap_vslam_nav.launch.py                    # 建图 (localization:=false)
-ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true # 导航
 
 未来工作：
 1. 更新用户程序和测试程序的引用
 2. 设计最优实验方案
+
 ### 5.27
 小车没走准的原因是ekf只订阅了雷达odom_rf2o，odom_raw只提供速度，没用到修正系数->有点突破了，误差控制到2cm以内了，但刚测两个点就崩了，小车一直停不下来，正在进一步排查
+->多测几次发现这是偶然问题，做个异常处理即可
+
+### 5.28
+今天目标是先完成slam预实验，如果定位不达标就想办法启用视觉里程计
+问题：
+1. 雷达模式下odom_raw数据稳定（车轮不动时完全不变），odom_rf2o有话题但无数据，odom_raw角度非常乱，imu比较稳定（静止时偏差不超过0.01），又因为ekf.yaml为原始文件，对于雷达和雷达+视觉融合肯定是没问题的，因此不能修改->可断言雷达配置有误导致rf2o没数据->robot.launch.py新增 rf2o_launch，条件 use_lidar=true 时启动->测试成功
