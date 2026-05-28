@@ -76,7 +76,24 @@ def launch_setup(context):
             'use_depth_camera': 'true',
             'use_lidar': 'true',
             'action_name': 'horizontal',
+            'enable_odom': 'false',       # 禁用出厂 EKF，用本文件专属 EKF
         }.items(),
+    )
+
+    # ── (c) 视觉+雷达专属 EKF: odom_raw + imu + rf2o(差分降权) ──
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[os.path.join('/home/ubuntu/ros2_ws/src/driver/controller/config', 'ekf_vslam.yaml'),
+                    {'use_sim_time': use_sim_time == 'true'}],
+        remappings=[
+            ('/tf', 'tf'),
+            ('/tf_static', 'tf_static'),
+            ('odometry/filtered', 'odom'),
+            ('cmd_vel', 'controller/cmd_vel'),
+        ],
     )
 
     navigation_launch = IncludeLaunchDescription(
@@ -89,6 +106,7 @@ def launch_setup(context):
             'use_namespace': use_namespace,
             'autostart': 'true',
             'rtabmap': 'true',
+            'controller_param': os.path.join(navigation_package_path, 'config', 'nav2_controller_vslam.yaml'),
         }.items(),
     )
 
@@ -105,6 +123,7 @@ def launch_setup(context):
         actions=[
             PushRosNamespace(robot_name),
             base_launch,
+            ekf_node,
             TimerAction(
                 period=10.0,
                 actions=[navigation_launch],

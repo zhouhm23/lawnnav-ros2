@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+[DEPRECATED — 2026.05.28] 功能已合并至 slam_toolbox_lidar_nav.launch.py。
+建图/导航统一由 navigation/slam_toolbox_lidar_nav.launch.py 的 localization 参数切换。
+本文件保留仅作回滚参考。
+
 slam_toolbox_lidar_slam.launch.py — (b) 单雷达 slam_toolbox 建图
 
 TF 树:

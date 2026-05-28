@@ -38,6 +38,7 @@ rtabmap:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
     'grid_size': '20'
     'Grid/Sensor': 'true'
+    'pub_loc_pose_only_when_localizing': 'false'  # 强制所有模式发布 /rtabmap/localization_pose
 
 # 以下是RTAB-Map参数列表，注释掉的参数可以根据需要启用和调整
 # BRIEF/Bytes # 特征描述子BRIEF的字节数

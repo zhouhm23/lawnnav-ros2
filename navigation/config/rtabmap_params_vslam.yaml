@@ -44,6 +44,7 @@ rtabmap:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
     'grid_size': '20'
     'Grid/Sensor': 'false' # Set to false to use the laser scan for the occupancy grid instead of the depth camera
+    'pub_loc_pose_only_when_localizing': 'false'  # 强制所有模式发布 /rtabmap/localization_pose
 
     # Loop Closure Detection
     # 'Kp/DetectorStrategy': '0' # 0=SURF 1=SIFT 2=ORB 3=FAST/FREAK 4=FAST/BRIEF 5=GFTT/FREAK 6=GFTT/BRIEF 7=BRISK 8=GFTT/ORB 9=KAZE

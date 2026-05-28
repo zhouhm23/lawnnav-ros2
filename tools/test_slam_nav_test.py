@@ -37,6 +37,7 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from nav_msgs.msg import Odometry
 from nav2_msgs.action import NavigateToPose
 
 from test_utils import (
@@ -70,10 +71,9 @@ WS_ROOT = Path(__file__).resolve().parent.parent
 NAV_LAUNCH_CMD = {
     "camera": "ros2 launch navigation rtabmap_camera_nav.launch.py",
     "vslam":  "ros2 launch navigation rtabmap_vslam_nav.launch.py",
+    # lidar 已合并为单 launch (localization:=false=建图, true=定位)
+    "lidar":  "ros2 launch navigation slam_toolbox_lidar_nav.launch.py",
 }
-# lidar 需要两个 launch 并行: SLAM + Nav2 (空地图, 用 SLAM 动态地图)
-LIDAR_SLAM_CMD = "ros2 launch slam slam_toolbox_lidar_slam.launch.py"
-LIDAR_NAV_CMD  = "ros2 launch navigation slam_toolbox_lidar_nav.launch.py map:="
 
 # 各传感器对应的定位 topic
 SENSOR_POSE_TOPIC = {
@@ -149,9 +149,11 @@ class SlamNavTest(Node):
 
         self.get_logger().info(f"传感器: {sensor}  ->  定位 topic: {self._pose_topic}")
 
-        self.create_subscription(
-            PoseWithCovarianceStamped, self._pose_topic,
-            self._pose_callback, 10)
+        # lidar 的 /odom 是 nav_msgs/Odometry，其他是 PoseWithCovarianceStamped
+        if sensor == "lidar":
+            self.create_subscription(Odometry, self._pose_topic, self._pose_callback, 10)
+        else:
+            self.create_subscription(PoseWithCovarianceStamped, self._pose_topic, self._pose_callback, 10)
 
         self._action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
@@ -190,25 +192,13 @@ class SlamNavTest(Node):
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(5)
 
-        if self._sensor in ("camera", "vslam"):
-            cmd = NAV_LAUNCH_CMD[self._sensor]
-            self.get_logger().info(f"启动: {cmd}")
-            proc = subprocess.Popen(
-                ["bash", "-lc", f"{self._source_cmd()} && {cmd}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._nav_procs.append(proc)
-        elif self._sensor == "lidar":
-            self.get_logger().info(f"启动 SLAM: {LIDAR_SLAM_CMD}")
-            ps = subprocess.Popen(
-                ["bash", "-lc", f"{self._source_cmd()} && {LIDAR_SLAM_CMD}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._nav_procs.append(ps)
-            time.sleep(3.0)
-            self.get_logger().info(f"启动 Nav2: {LIDAR_NAV_CMD}")
-            pn = subprocess.Popen(
-                ["bash", "-lc", f"{self._source_cmd()} && {LIDAR_NAV_CMD}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._nav_procs.append(pn)
+        # 统一启动: 所有传感器均使用单一 launch (lidar 已合并 SLAM+Nav)
+        cmd = NAV_LAUNCH_CMD[self._sensor]
+        self.get_logger().info(f"启动: {cmd}")
+        proc = subprocess.Popen(
+            ["bash", "-lc", f"{self._source_cmd()} && {cmd}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self._nav_procs.append(proc)
 
         self.get_logger().info(f"等待建图+导航就绪 ({NAV_STARTUP_WAIT:.0f}s)...")
         time.sleep(NAV_STARTUP_WAIT)

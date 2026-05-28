@@ -40,8 +40,8 @@ ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 
 ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true # 导航
 
 # (b) 单雷达
-ros2 launch slam slam_toolbox_lidar_slam.launch.py
-ros2 launch navigation slam_toolbox_lidar_nav.launch.py
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py                        # 建图 (localization:=false)
+ros2 launch navigation slam_toolbox_lidar_nav.launch.py localization:=true map:=my_map  # 导航 (需预建 PGM 地图)
 
 # (c) 视觉+雷达
 ros2 launch navigation rtabmap_vslam_nav.launch.py                    # 建图 (localization:=false)

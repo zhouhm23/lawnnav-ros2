@@ -95,6 +95,7 @@ def launch_setup(context):
             'use_namespace': use_namespace,
             'autostart': 'true',
             'rtabmap': 'true',
+            'controller_param': os.path.join(navigation_package_path, 'config', 'nav2_controller_camera.yaml'),
         }.items(),
     )
 

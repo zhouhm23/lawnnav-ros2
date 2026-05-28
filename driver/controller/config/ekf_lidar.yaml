@@ -79,8 +79,8 @@
       # default values, and must be specified.
       odom0: odom_raw
 
-      # ── (b) 单雷达: 出厂默认，读 twist (vx,vy,vyaw) ──
-      # AMCL 提供 map→odom 全局修正，EKF 仅负责局部平滑
+      # ── (c) 视觉+雷达: 出厂默认，读 twist (vx,vy,vyaw) ──
+      # RTAB-Map 提供 map→odom 全局修正，EKF 仅负责局部平滑
       odom0_config: [false, false, false,
                      false, false, false,
                      true, true, false,
@@ -123,7 +123,19 @@
       #odom0_pose_rejection_threshold: 5.0
       #odom0_twist_rejection_threshold: 1.0
 
-      # ── odom1 (odom_rf2o) 已移除: LD19 未连接，发布空消息 ──
+      # ── odom1 (rf2o 激光里程计): 差分模式降权 ──
+      # rf2o 位置漂移 ~10cm，不直接用作绝对位姿，避免与 odom_raw 冲突。
+      # differential:true → EKF 将位姿 Δpose/Δt 转为速度，与 odom0 速度互补。
+      odom1: odom_rf2o
+      odom1_config: [true, true, false,
+                     false, false, false,
+                     false, false, false,
+                     false, false, false,
+                     false, false, false]
+      odom1_differential: true
+      odom1_relative: false
+      odom1_queue_size: 5
+      odom1_pose_rejection_threshold: 0.5
 
       imu0: imu
       imu0_config: [false, false, false,
