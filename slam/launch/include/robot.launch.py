@@ -110,12 +110,12 @@ def launch_setup(context):
         condition=IfCondition(use_lidar)
     )
 
-    # 激光里程计 (rf2o): 从 /scan_raw 计算 odom_rf2o，为 EKF 提供独立位姿观测
-    rf2o_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(controller_package_path, 'launch/rf2o_laser_odometry.launch.py')),
-        condition=IfCondition(use_lidar),
-    )
+    # rf2o_launch 已注释: LD19 精度不达标，保留仅作回滚参考
+    # rf2o_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(controller_package_path, 'launch/rf2o_laser_odometry.launch.py')),
+    #     condition=IfCondition(use_lidar),
+    # )
 
     joystick_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(peripherals_package_path, 'launch/joystick_control.launch.py')),
@@ -141,7 +141,7 @@ def launch_setup(context):
         controller_launch,
         depth_camera_launch,
         lidar_launch,
-        rf2o_launch,
+        # rf2o_launch,  # 已注释
         joystick_control_launch,
         # init_pose_launch,
         robot_state_publisher_node,

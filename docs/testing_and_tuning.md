@@ -694,5 +694,9 @@ fix：目前仅融合方案和单雷达正常，单视觉失败
 今天目标是先完成slam预实验，如果定位不达标就想办法启用视觉里程计
 问题：
 1. 雷达模式下odom_raw数据稳定（车轮不动时完全不变），odom_rf2o有话题但无数据，odom_raw角度非常乱，imu比较稳定（静止时偏差不超过0.01），又因为ekf.yaml为原始文件，对于雷达和雷达+视觉融合肯定是没问题的，因此不能修改->可断言雷达配置有误导致rf2o没数据->robot.launch.py新增 rf2o_launch，条件 use_lidar=true 时启动->测试成功
-2. 雷达模式下odom有正常数据，但tools/test_slam_nav_test.py --sensor lidar显示等待odom失败，但不能用/localization_pose，因为这是rtabmap的；另外发现rf2o位置非常乱，似乎雷达不适合在边建图边导航时重定位->方法1：像其他两个方案那样把slam_toolbox_lidar_slam.launch.py整合进slam_toolbox_lidar_nav.launch.py，然后通过localization来切换模式（改动很大，容易引入新问题）；方法2：使用rtabmap单雷达，但这又违背论文设计；法3：雷达先建图再跑，但这又违背单一变量原则；方法4：去查看rf2o配置，修正参数使其更精确（需要先确认参数是否已经是原厂参数，是的话就不能改）->test_slam_nav_test.py类型错误，单雷达时相机要拔掉，避免干扰
-3. 雷达建图距离不够远，到不了目标点，已经allow_unknown为true也不行，实验无法完成->
+2. 雷达模式下odom有正常数据，但tools/test_slam_nav_test.py --sensor lidar显示等待odom失败，但不能用/localization_pose，因为这是rtabmap的；另外发现rf2o位置非常乱，似乎雷达不适合在边建图边导航时重定位->方法1：像其他两个方案那样把slam_toolbox_lidar_slam.launch.py整合进slam_toolbox_lidar_nav.launch.py，然后通过localization来切换模式（改动很大，容易引入新问题）；方法2：使用rtabmap单雷达，但这又违背论文设计；法3：雷达先建图再跑，但这又违背单一变量原则；方法4：去查看rf2o配置，修正参数使其更精确（需要先确认参数是否已经是原厂参数，是的话就不能改）->test_slam_nav_test.py类型错误，单雷达时相机要拔掉，避免干扰->测试通过
+3. 雷达建图距离不够远，到不了目标点，已经allow_unknown为true也不行，实验无法完成->增大地图范围->测试通过
+4. 视觉里程计通过pub_loc_pose_only_when_localizing发布，/rtabmap/localization_pose发布但为空->不用管，里程计够准了->测试通过
+5. 雷达启用rf2o_launch后定位更差了->注释掉->x,y不抖了，但旋转后剧烈抖动->rviz的匹配问题，不影响实际导航->真正问题是角度容差小于随机抖动了，现已修正不小于1°->测试通过
+明天工作还是赶快完成预实现，只能能跑就行了，不要想着改进效果了，有结果都不错了
+### 
