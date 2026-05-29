@@ -1,0 +1,4 @@
+run_id,timestamp,sensor,avg_cpu_pct,avg_mem_pct,num_samples
+1,1780040850.749,camera,39.9,47.9,4
+2,1780046163.297,lidar,28.1,49.0,3
+3,1780047673.714,vslam,28.1,50.8,8

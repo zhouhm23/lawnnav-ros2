@@ -107,6 +107,7 @@ ros2 run nav2_map_server map_saver_cli -f /home/ubuntu/.ros/maps/vslam_map
 
 ```bash
 # 依次测三种传感器，各3次（脚本自动启动建图+导航，只需回车确认）
+# 一定要记住换传感器
 python3 tools/test_slam_nav_test.py --sensor camera
 python3 tools/test_slam_nav_test.py --sensor lidar
 python3 tools/test_slam_nav_test.py --sensor vslam

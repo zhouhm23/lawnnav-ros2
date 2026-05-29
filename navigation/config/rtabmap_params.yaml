@@ -29,16 +29,17 @@ rtabmap:
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
     # rgbd包含d，不能同时为真
+    # 这三个不能带引号，否则会被当成字符串而不是布尔值，导致rtabmap无法正确解析参数
     'subscribe_rgbd': true
     'subscribe_depth': false
-    'subscribe_scan': true  # 纯扫描模式：虚拟雷达做ICP定位（pointcloud_to_laserscan→/scan_raw）
-    'Reg/Strategy': '2'
-    'Reg/Force3DoF': 'true'
+    'subscribe_scan': true
+    'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
+    'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
     'grid_size': '20'
     'Grid/Sensor': 'true'
-    pub_loc_pose_only_when_localizing: false  # 强制所有模式发布 /rtabmap/localization_pose
+    # pub_loc_pose_only_when_localizing: false  # 强制所有模式发布 /rtabmap/localization_pose（实际发布数据为空，没啥用，关掉节约性能）
 
 # 以下是RTAB-Map参数列表，注释掉的参数可以根据需要启用和调整
 # BRIEF/Bytes # 特征描述子BRIEF的字节数

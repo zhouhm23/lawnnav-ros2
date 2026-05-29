@@ -67,6 +67,18 @@ def launch_setup(context):
             package='rtabmap_slam', executable='rtabmap', output='screen',
             parameters=rtabmap_parameters,
             remappings=remappings),
+
+        # 深度相机 → 虚拟 LaserScan → /scan_depth（不与真雷达 /scan_raw 冲突）
+        Node(
+            package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
+            name='depth_to_scan',
+            output='screen',
+            parameters=[os.path.join(nav_share, 'config', 'pointcloud_to_laserscan_params.yaml'),
+                        {'use_sim_time': use_sim_time}],
+            remappings=[
+                ('cloud_in', '/ascamera/camera_publisher/depth0/points'),
+                ('scan', '/scan_depth'),
+            ]),
     ]
 
 

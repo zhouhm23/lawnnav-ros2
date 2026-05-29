@@ -56,8 +56,8 @@ from test_utils import (
 
 GOAL_TIMEOUT_SEC = 120.0
 LOCALIZATION_LOST_TIMEOUT = 3.0
-STATIC_DURATION_SEC = 5.0
-STATIC_RATE_HZ = 5.0
+STATIC_DURATION_SEC = 15.0
+STATIC_RATE_HZ = 10.0
 PERF_SAMPLE_INTERVAL = 10.0   # 性能采样间隔 (秒)
 PERF_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/slam_perf"
 WP_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/waypoints"
@@ -165,6 +165,8 @@ class SlamNavTest(Node):
         self._collisions = []
         self._static_results = []
         self._waypoint_rows = []    # 航点原始记录（含用户 GT 输入）
+        self._static_samples = []     # 回调驱动的静态样本
+        self._static_collecting = False
         self._cpu_samples = []
         self._mem_samples = []
         self._success = False
@@ -221,6 +223,12 @@ class SlamNavTest(Node):
         if self._active_pose_topic is None:
             self._active_pose_topic = self._pose_topic
             self.get_logger().info(f"定位源已激活: {self._pose_topic}")
+        # 静态采集期间自动记录
+        if self._static_collecting:
+            p = msg.pose.pose
+            yaw = yaw_from_quaternion(p.orientation.x, p.orientation.y,
+                                      p.orientation.z, p.orientation.w)
+            self._static_samples.append((p.position.x, p.position.y, yaw))
 
     # ── 位姿辅助 ─────────────────────────────────────────────────────
 
@@ -295,6 +303,12 @@ class SlamNavTest(Node):
                 self._stop_navigation()
                 return
 
+            # 等待机器人停稳再记录位姿（Nav2 到达≠停止旋转）
+            self.get_logger().info(f"  停稳等待 3s...")
+            settle_deadline = time.monotonic() + 3.0
+            while time.monotonic() < settle_deadline and rclpy.ok():
+                rclpy.spin_once(self, timeout_sec=0.05)
+
             cp = self._get_current_pose()
             if cp is None:
                 self.get_logger().error(f"航点 {label} 到达后定位丢失")
@@ -347,7 +361,7 @@ class SlamNavTest(Node):
                 self._waypoint_rows.append({
                     "label": label,
                     "slam_x": cp[0], "slam_y": cp[1], "slam_yaw_deg": math.degrees(cp[2]),
-                    "gt_input_dx": dx, "gt_input_dy": dy, "gt_input_yaw": yaw_actual,
+                    "gt_input_dx": dx, "gt_input_dy": dy, "gt_input_yaw_deg": yaw_actual,
                     "gt_paper_x": gt_x_p, "gt_paper_y": gt_y_p, "gt_paper_yaw_deg": gt_yaw_deg_p,
                     "gt_map_x": gt_map[0], "gt_map_y": gt_map[1], "gt_map_yaw_deg": math.degrees(gt_map[2]),
                 })
@@ -533,30 +547,22 @@ class SlamNavTest(Node):
     def _collect_static_at_waypoint(self, label):
         self.get_logger().info(f"  >>> 点{label} 静态稳定性采集 {STATIC_DURATION_SEC:.0f}s...")
 
-        # 稳定等待
-        settle_deadline = time.monotonic() + 2.0
+        # 稳定等待 3s，车辆停止
+        settle_deadline = time.monotonic() + 3.0
         while time.monotonic() < settle_deadline and rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.1)
 
-        interval = 1.0 / STATIC_RATE_HZ
+        # 回调驱动采样：每次 /localization_pose 或 /odom 更新时自动记录
+        self._static_samples = []
+        self._static_collecting = True
         start_mono = time.monotonic()
-        samples = []
-        last_stamp_ns = -1
-
         while time.monotonic() - start_mono < STATIC_DURATION_SEC and rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.01)
-            cp = self._get_current_pose()
-            if cp is not None:
-                stamp_sec, stamp_ns = self._get_current_stamp()
-                stamp_key = stamp_sec * 10**9 + stamp_ns
-                if stamp_key == last_stamp_ns:
-                    continue
-                last_stamp_ns = stamp_key
-                samples.append((cp[0], cp[1], cp[2]))
-            time.sleep(interval)
+            rclpy.spin_once(self, timeout_sec=0.05)
+        self._static_collecting = False
+        samples = self._static_samples
 
-        if len(samples) < 2:
-            self.get_logger().warn(f"  点{label} 静态样本不足")
+        if len(samples) < 5:
+            self.get_logger().warn(f"  点{label} 静态样本不足 (n={len(samples)})")
             return
 
         # 以第一帧为参考计算漂移

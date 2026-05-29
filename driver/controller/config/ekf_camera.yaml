@@ -79,7 +79,7 @@
       # default values, and must be specified.
       odom0: odom_raw
 
-      # 改: 使用 odom_raw 的 pose (x,y,yaw) + 差分模式。
+      # 使用 odom_raw 的 pose (x,y,yaw) + 差分模式。
       # odom_publisher_node 已将 linear_correction_factor 乘到 pose 上，
       # 但 twist 是裸指令速度不含修正。原配置只读 twist → 修正系数无效。
       # 改为读 pose + differential:true → EKF 自动 Δpose/Δt 得到已修正的速度。
@@ -127,7 +127,16 @@
       #odom0_pose_rejection_threshold: 5.0
       #odom0_twist_rejection_threshold: 1.0
 
-      # ── odom1 (odom_rf2o) 已移除: 该话题发布空消息，污染 EKF 估计 ──
+      # Visual odometry feedback (RTAB-Map visual SLAM)
+      pose0: rtabmap/localization_pose
+      pose0_config: [true,  true,  false,
+                     false, false, false,
+                     false, false, false,
+                     false, false, false,
+                     false, false, false]
+      pose0_differential: true
+      pose0_queue_size: 5
+      pose0_rejection_threshold: 5.0
 
       imu0: imu
       imu0_config: [false, false, false,
@@ -142,17 +151,6 @@
       #imu0_pose_rejection_threshold: 0.8                 # Note the difference in parameter names
       #imu0_twist_rejection_threshold: 0.8                #
       #imu0_linear_acceleration_rejection_threshold: 0.8  #
-
-      # ── RTAB-Map 视觉位姿反馈: 差分模式转为速度修正 ──
-      pose0: rtabmap/localization_pose
-      pose0_config: [true,  true,  false,
-                     false, false, false,
-                     false, false, false,
-                     false, false, false,
-                     false, false, false]
-      pose0_differential: true
-      pose0_queue_size: 5
-      pose0_rejection_threshold: 5.0
 
       # [ADVANCED] Some IMUs automatically remove acceleration due to gravity, and others don't. If yours doesn't, please set
       # this to true, and *make sure* your data conforms to REP-103, specifically, that the data is in ENU frame.

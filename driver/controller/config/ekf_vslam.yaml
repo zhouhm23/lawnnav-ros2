@@ -79,10 +79,15 @@
       # default values, and must be specified.
       odom0: odom_raw
 
-      # ── odom_raw: 仅线速度 (vx,vy)，朝向全交 IMU ──
-      odom0_config: [false, false, false,
+      # 使用 odom_raw 的 pose (x,y,yaw) + 差分模式。
+      # odom_publisher_node 已将 linear_correction_factor 乘到 pose 上，
+      # 但 twist 是裸指令速度不含修正。原配置只读 twist → 修正系数无效。
+      # 改为读 pose + differential:true → EKF 自动 Δpose/Δt 得到已修正的速度。
+      # 含 yaw: odom_raw 角度精度 1°/1080°，远优于 IMU 动态漂移
+      # 顺序: x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az
+      odom0_config: [true, true, false,
+                     false, false, true,
                      false, false, false,
-                     true, true, false,
                      false, false, false,
                      false, false, false]
 
@@ -98,7 +103,7 @@
       # data is converted to velocity data by differentiating the absolute pose measurements. These velocities are then
       # integrated as usual. NOTE: this only applies to sensors that provide pose measurements; setting differential to true
       # for twist measurements has no effect.
-      odom0_differential: false
+      odom0_differential: true
 
       # [ADVANCED] When the node starts, if this parameter is true, then the first measurement is treated as a "zero point"
       # for all future measurements. While you can achieve the same effect with the differential paremeter, the key
@@ -124,23 +129,25 @@
 
       # Laser odometry (rf2o ICP scan matching)
       odom1: odom_rf2o
-      odom1_config: [false, false, false,
+      odom1_config: [true,  true,  false,
                      false, false, false,
                      false, false, false,
                      false, false, false,
                      false, false, false]
-      odom1_differential: false
-      odom1_queue_size: 1
+      odom1_differential: true
+      odom1_queue_size: 5
+      odom1_rejection_threshold: 5.0
 
       # Visual odometry feedback (RTAB-Map visual SLAM)
       pose0: rtabmap/localization_pose
-      pose0_config: [false, false, false,
+      pose0_config: [true,  true,  false,
                      false, false, false,
                      false, false, false,
                      false, false, false,
                      false, false, false]
-      pose0_differential: false
-      pose0_queue_size: 1
+      pose0_differential: true
+      pose0_queue_size: 5
+      pose0_rejection_threshold: 5.0
 
       imu0: imu
       imu0_config: [false, false, false,

@@ -135,7 +135,7 @@ local_costmap:
       rolling_window: true
       width: 3
       height: 3
-      resolution: 0.03
+      resolution: 0.05
       transform_tolerance: 1.0
       robot_radius: 0.14
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -196,7 +196,7 @@ global_costmap:
         scan:
           topic: /scan_raw
           data_type: "LaserScan"
-          clearing: True # 设为False后即使障碍物已经移开，地图上仍会保留历史标记
+          clearing: False # 设为False后即使障碍物已经移开，地图上仍会保留历史标记
           marking: True
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
