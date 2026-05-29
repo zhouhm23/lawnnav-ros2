@@ -4,7 +4,8 @@ test_coverage_comparison.py — 全覆盖性能对照实验（论文表1）。
 
 支持参数化:
     --sensor camera|lidar|vslam  --algo ours|baseline
-    --runs N  (默认3次)
+
+每组固定重复 3 次。
 
 实验矩阵 (6组):
     单深度相机 × 边缘外扩 BCD (★ 本文方法)
@@ -201,18 +202,31 @@ def run_one(sensor, algo, run_id):
         return False
     _stop_ros()
 
-    nav = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {NAV_CMD[sensor]}"],
-                           stdout=open(os.path.join(LOG_DIR, f"{label}_nav.log"), "w"),
-                           stderr=subprocess.STDOUT, env=_ros_env())
+    # ── 地图准备（必须在启动 nav 之前完成） ────────────────────────
+    mapserver = None
+    nav_extra_args = ""
+    if sensor in ("camera", "vslam"):
+        if not _restore_rtabmap_db(map_name):
+            return False
+        # 传 map_db 防止 launch 删除 db；传 publish_map 自动发布 /map
+        map_db_path = os.path.join(MAP_BACKUP_DIR, f"{map_name}.db")
+        nav_extra_args = f" map_db:={shlex.quote(map_db_path)} publish_map:=true"
+    elif sensor == "lidar":
+        if not _ensure_lidar_map(map_name):
+            return False
+
+    nav = subprocess.Popen(
+        ["bash", "-lc", f"{_source_cmd()} && {NAV_CMD[sensor]}{nav_extra_args}"],
+        stdout=open(os.path.join(LOG_DIR, f"{label}_nav.log"), "w"),
+        stderr=subprocess.STDOUT, env=_ros_env())
     _info(f"navigation 已启动 ({sensor})"); time.sleep(10)
 
-    mapserver = None
-    if sensor in ("camera", "vslam"):
-        if not _restore_rtabmap_db(map_name): _cleanup(nav); return False
-        time.sleep(10); _publish_rtabmap_map()
-    elif sensor == "lidar":
-        if not _ensure_lidar_map(map_name): _cleanup(nav); return False
+    if sensor == "lidar":
         mapserver = _launch_mapserver(map_name); time.sleep(2)
+    else:
+        # camera/vslam: launch 内置 publish_map:=true，等 15s 自动发布
+        _info("等待 RTAB-Map 加载地图并自动发布 /map (15s)...")
+        time.sleep(15)
 
     _info("等待 costmap 稳定 (5s)..."); time.sleep(5)
 
@@ -226,9 +240,16 @@ def run_one(sensor, algo, run_id):
     _info("等待节点就绪 (5s)..."); time.sleep(5)
 
     pub = str(LAUNCHER_DIR / "publish_region.py")
-    rc = subprocess.run(["python3", pub, "--file", REGION_FILE, "--wait", "5"], timeout=30)
+    rc = subprocess.run(["python3", pub, "--file", REGION_FILE, "--wait", "8"], timeout=30)
     if rc.returncode != 0:
         _warn("区域发布失败"); _cleanup(pc, ev, nav, mapserver); return False
+
+    # 等 path_coverage 收到区域并开始工作
+    _info("等待 path_coverage 开始执行 (5s)...")
+    time.sleep(5)
+    if pc.poll() is not None:
+        _warn(f"path_coverage 刚启动即退出 (exit={pc.returncode})，可能未收到区域或导航未就绪")
+        _cleanup(pc, ev, nav, mapserver); return False
 
     _ok(f"{label} 覆盖已开始")
     start_time = time.time()
@@ -294,7 +315,6 @@ def main():
     p = argparse.ArgumentParser(description="全覆盖性能对照实验")
     p.add_argument("--sensor", choices=["camera","lidar","vslam"], help="传感器")
     p.add_argument("--algo", choices=["ours","baseline"], help="覆盖算法")
-    p.add_argument("--runs", type=int, default=3, help="每组重复次数(默认3)")
     p.add_argument("--all", action="store_true", help="全部6组")
     p.add_argument("--core", action="store_true", help="核心4组")
     args = p.parse_args()
@@ -312,18 +332,17 @@ def main():
     else:
         _warn("请指定 --sensor --algo 或 --all 或 --core"); sys.exit(1)
 
-    total_runs = len(combos) * args.runs
-    print(f"\n{'='*60}\n  全覆盖对照实验\n  组数:{len(combos)} × {args.runs}次 = {total_runs}次\n{'='*60}\n")
+    total_runs = len(combos)
+    print(f"\n{'='*60}\n  全覆盖对照实验\n  组数:{len(combos)}\n{'='*60}\n")
 
     count = ok = 0
     for sensor, algo in combos:
-        for rid in range(1, args.runs+1):
-            count += 1
-            _info(f"[{count}/{total_runs}] {sensor}×{algo} 第{rid}次")
-            try:
-                if run_one(sensor, algo, rid): ok += 1
-            except KeyboardInterrupt: _warn("实验中断"); break
-            time.sleep(3)
+        count += 1
+        _info(f"[{count}/{total_runs}] {sensor}×{algo}")
+        try:
+            if run_one(sensor, algo, 1): ok += 1
+        except KeyboardInterrupt: _warn("实验中断"); break
+        time.sleep(3)
 
     print(f"\n{'='*60}\n  完成: {ok}/{total_runs} 成功\n{'='*60}")
     print(f"日志: {LOG_DIR}/")

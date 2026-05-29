@@ -27,6 +27,7 @@ ament_python_install_package(${PROJECT_NAME})
 # Install Python executables     --- make sure to chmod +x XYZ.py
 install(PROGRAMS scripts/path_coverage_node.py DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/path_coverage_node_baseline.py DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY scripts/test DESTINATION lib/${PROJECT_NAME}/test)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
