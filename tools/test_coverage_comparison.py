@@ -20,7 +20,7 @@ test_coverage_comparison.py — 全覆盖性能对照实验（论文表1）。
     python3 tools/test_coverage_comparison.py --core    # 核心4组
     python3 tools/test_coverage_comparison.py --all     # 全部6组
 """
-import argparse, os, re, shlex, shutil, signal, subprocess, sys, time
+import argparse, os, re, select, shlex, shutil, signal, subprocess, sys, time
 from pathlib import Path
 
 from test_utils import AppendingCSVLogger, sample_cpu_mem, save_perf_samples
@@ -36,9 +36,9 @@ SAMPLE_INTERVAL = 10.0  # CPU/内存采样间隔 (秒)
 
 SENSOR_MAP = {"camera": "camera_map", "lidar": "radar_map", "vslam": "vslam_map"}
 NAV_CMD = {
-    "camera": "ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true",
+    "camera": "ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true coverage_mode:=true",
     "lidar":  "ros2 launch navigation slam_toolbox_lidar_nav.launch.py",
-    "vslam":  "ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true",
+    "vslam":  "ros2 launch navigation rtabmap_vslam_nav.launch.py localization:=true coverage_mode:=true",
 }
 ALGO_CMD = {
     "ours":     "ros2 launch path_coverage path_coverage.launch.py",
@@ -191,16 +191,13 @@ def run_one(sensor, algo, run_id):
     """
     label = f"{sensor}_{algo}_run{run_id}"
     map_name = SENSOR_MAP[sensor]
-    print(f"\n{'='*60}")
     print(f"  {label}  传感器:{sensor}  算法:{algo}  第{run_id}次")
-    print(f"{'='*60}")
-    _info("请在 PC 上启动录像！按 Enter 继续...")
-    try:
-        input()
-    except (EOFError, KeyboardInterrupt):
-        _warn("用户取消")
-        return False
     _stop_ros()
+    # 清除上次覆盖的断点续跑文件
+    ckpt = "/tmp/path_coverage_checkpoint.json"
+    if os.path.exists(ckpt):
+        os.remove(ckpt)
+        _info("已清除断点续跑文件")
 
     # ── 地图准备（必须在启动 nav 之前完成） ────────────────────────
     mapserver = None
@@ -252,6 +249,7 @@ def run_one(sensor, algo, run_id):
         _cleanup(pc, ev, nav, mapserver); return False
 
     _ok(f"{label} 覆盖已开始")
+    print("\033[36m[INFO]\033[0m 按 F+Enter 可提前正常结束")
     start_time = time.time()
     cpu_samples = []
     mem_samples = []
@@ -260,14 +258,25 @@ def run_one(sensor, algo, run_id):
 
     try:
         while time.time() - start_time < COVERAGE_TIMEOUT:
-            # 每 SAMPLE_INTERVAL 秒采样 CPU/内存
+            # 每 SAMPLE_INTERVAL 秒静默采样 CPU/内存（不打印，避免干扰输入）
             now = time.time()
             if now - last_sample >= SAMPLE_INTERVAL:
                 cpu_pct, mem_pct = sample_cpu_mem()
                 cpu_samples.append(cpu_pct)
                 mem_samples.append(mem_pct)
                 last_sample = now
-                _info(f"  性能采样 [{len(cpu_samples)}]: CPU {cpu_pct:.1f}%  MEM {mem_pct:.1f}%")
+
+            # 非阻塞检测 F 键（用户请求正常结束）
+            if select.select([sys.stdin], [], [], 0)[0]:
+                line = sys.stdin.readline().strip().upper()
+                if line == 'F':
+                    _info("用户请求正常结束，正在清理...")
+                    success = True
+                    # 最后一次采样
+                    cpu_pct, mem_pct = sample_cpu_mem()
+                    cpu_samples.append(cpu_pct)
+                    mem_samples.append(mem_pct)
+                    break
 
             if pc.poll() is not None:
                 _info("path_coverage 已退出 (正常完成)")

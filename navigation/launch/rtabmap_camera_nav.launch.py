@@ -27,6 +27,7 @@ def launch_setup(context):
     master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
     localization = LaunchConfiguration('localization', default='false').perform(context)
     publish_map = LaunchConfiguration('publish_map', default='false')
+    coverage_mode = LaunchConfiguration('coverage_mode', default='false')
     map_db = LaunchConfiguration('map_db', default='').perform(context)
 
     # 地图 db 处理
@@ -43,6 +44,7 @@ def launch_setup(context):
     robot_name_arg = DeclareLaunchArgument('robot_name', default_value=robot_name)
     localization_arg = DeclareLaunchArgument('localization', default_value=localization)
     publish_map_arg = DeclareLaunchArgument('publish_map', default_value=publish_map)
+    coverage_mode_arg = DeclareLaunchArgument('coverage_mode', default_value=coverage_mode)
     map_db_arg = DeclareLaunchArgument('map_db', default_value=map_db)
 
     use_sim_time = 'true' if sim == 'true' else 'false'
@@ -86,11 +88,14 @@ def launch_setup(context):
         ],
     )
 
+    # 覆盖模式使用独立Nav2参数文件，降低膨胀半径以对齐502d505成功值
+    nav2_params_file = os.path.join(navigation_package_path, 'config',
+        'nav2_params_coverage.yaml' if coverage_mode.perform(context) == 'true' else 'nav2_params.yaml')
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params.yaml'),
+            'params_file': nav2_params_file,
             'namespace': robot_name,
             'use_namespace': use_namespace,
             'autostart': 'true',
@@ -133,7 +138,7 @@ def launch_setup(context):
       ]
     )
 
-    return [sim_arg, master_name_arg, robot_name_arg, localization_arg, publish_map_arg, map_db_arg, bringup_launch]
+    return [sim_arg, master_name_arg, robot_name_arg, localization_arg, publish_map_arg, coverage_mode_arg, map_db_arg, bringup_launch]
 
 def generate_launch_description():
     return LaunchDescription([

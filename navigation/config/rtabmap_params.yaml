@@ -23,10 +23,8 @@ rtabmap:
     'Rtabmap/DetectionRate': '8'
     'RGBD/LinearUpdate': '0.10'
     'RGBD/AngularUpdate': '0.10'
-    'SURF/HessianThreshold': '50'     # 默认 100，降到 50 提取更多特征
-    'Vis/InlierDistance': '8.0'       # 默认 4px，放宽到 8px 容忍深度噪声
-    'Vis/MaxFeatures': '800'
-    'Vis/MinInliers': '6' # Vis/MinInliers should be >= 6
+    'Vis/MaxFeatures': '1600'
+    'Vis/MinInliers': '36' # Vis/MinInliers should be >= 6
     'OdomF2M/MaxSize': '1000'
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
@@ -35,7 +33,7 @@ rtabmap:
     'subscribe_rgbd': true
     'subscribe_depth': false
     'subscribe_scan': true
-    'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
+    'Reg/Strategy': '0' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
     'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)

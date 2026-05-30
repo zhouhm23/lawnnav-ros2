@@ -290,9 +290,9 @@ class Launcher:
             time.sleep(10.0)
 
         # 启动 navigation（RTAB-Map localization + Nav2）
-        self._info("=== 纯定位覆盖 (localization:=true) ===")
+        self._info("=== 纯定位覆盖 (localization:=true, coverage_mode:=true) ===")
         self._spawn("navigation",
-                    "ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true")
+                    "ros2 launch navigation rtabmap_camera_nav.launch.py localization:=true coverage_mode:=true")
         self._info("等待 navigation 初始化 (10s)...")
         time.sleep(10.0)
 
