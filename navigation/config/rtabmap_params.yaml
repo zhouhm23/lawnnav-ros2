@@ -15,28 +15,29 @@ rtabmap:
     'Grid/3D': 'true'
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
-    'proj_max_ground_height': '0.02'
-    'proj_max_ground_angle': '20'
+    'Vis/MaxFeatures': '800'
     'RGBD/ProximityBySpace': 'true'
     'RGBD/ProximityPathMaxNeighbors': '5'
     'RGBD/NeighborLinkRefining': 'false'
     'Rtabmap/DetectionRate': '8'
     'RGBD/LinearUpdate': '0.10'
     'RGBD/AngularUpdate': '0.10'
-    'Vis/MaxFeatures': '1600'
-    'Vis/MinInliers': '36' # Vis/MinInliers should be >= 6
-    'OdomF2M/MaxSize': '1000'
+    # 'Vis/CorNNDR': '0.5'           # 收紧回环匹配：低NNDR=更严格的描述子匹配，减少假阳性回环。1=不触发任何回环->效果差
+    # 'RGBD/OptimizeFromGraphEnd': 'true'  # 从最新节点优化：错误回环影响范围更小->效果差
+    # 'Rtabmap/LoopThr': '0.20'      # 回环检测阈值：更高=更少但更可靠的回环->效果差
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
     # rgbd包含d，不能同时为真
     # 这三个不能带引号，否则会被当成字符串而不是布尔值，导致rtabmap无法正确解析参数
     'subscribe_rgbd': true
     'subscribe_depth': false
-    'subscribe_scan': true
-    'Reg/Strategy': '0' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
+    'subscribe_scan': false
+    'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)->不能设为0，会直接崩溃，应该是性能消耗太大
     'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
+    # 'Optimizer/Robust': 'false'       # 关闭鲁棒核：回环修正不会被当作离群值削弱->效果差
+    # 'Optimizer/Iterations': '100'     # 增加优化迭代，让回环修正充分影响全局->效果差
     'grid_size': '20'
     'Grid/Sensor': 'true'
     # pub_loc_pose_only_when_localizing: false  # 强制所有模式发布 /rtabmap/localization_pose（实际发布数据为空，没啥用，关掉节约性能）
