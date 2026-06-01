@@ -58,7 +58,8 @@ _share_dir = get_package_share_directory('path_coverage')
 _scripts_test_dir = os.path.join(_share_dir, 'scripts', 'test')
 if _scripts_test_dir not in sys.path:
     sys.path.insert(0, _scripts_test_dir)
-from goal_tracker import GoalTracker
+# 编译后没问题 
+from goal_tracker import GoalTracker # type: ignore
 
 
 # Keep for backward compatibility; execution-stage cost filtering now uses
@@ -130,6 +131,8 @@ class MapDrive(Node):
 		# Static map masking (optional)
 		self.declare_parameter("use_static_map_mask", False)
 		self.declare_parameter("static_map_occupied_thresh", 65)
+		# 最小细胞面积过滤（平方米），小于此面积的cell跳过不执行
+		self.declare_parameter("min_cell_area", 0.0)
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value
@@ -147,6 +150,7 @@ class MapDrive(Node):
 		self.show_paths = self.get_parameter("show_paths").get_parameter_value().bool_value
 		self.use_static_map_mask = self.get_parameter("use_static_map_mask").get_parameter_value().bool_value
 		self.static_map_occupied_thresh = self.get_parameter("static_map_occupied_thresh").get_parameter_value().integer_value
+		self.min_cell_area = self.get_parameter("min_cell_area").get_parameter_value().double_value
 		self.static_map = None
 
 		self.create_subscription(PointStamped, "/clicked_point", self.rvizPointReceived, 1)
@@ -744,7 +748,7 @@ class MapDrive(Node):
 					poly_cell = poly_cell.difference(blocked_union)
 				except Exception:
 					pass
-			for poly_part in self._as_polygons(poly_cell, min_area=0.0):
+			for poly_part in self._as_polygons(poly_cell, min_area=self.min_cell_area):
 				c = poly_part.centroid
 				cells.append({"poly": poly_part, "centroid": (c.x, c.y)})
 				cell_polys.append(poly_part)

@@ -148,6 +148,7 @@ local_costmap:
         enabled: True
         footprint_clearing_enabled: True
         combination_method: 1
+        inf_is_valid: false
         observation_sources: scan
         scan:
           topic: /scan_raw
@@ -192,6 +193,7 @@ global_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         combination_method: 1
+        inf_is_valid: false # 防止清除视野外的障碍物
         observation_sources: scan
         scan:
           topic: /scan_raw
