@@ -12,19 +12,16 @@ rtabmap:
     'Grid/MaxGroundAngle': '20'
     'Grid/MapFrameProjection': 'true'
     'Grid/NormalsSegmentation': 'true'
-    'Grid/3D': 'true'
+    'Grid/3D': 'false'
     'Grid/GroundIsObstacle': 'false'
     'Grid/RayTracing': 'true'
-    'Vis/MaxFeatures': '800'
+    'Vis/MaxFeatures': '400'
     'RGBD/ProximityBySpace': 'true'
     'RGBD/ProximityPathMaxNeighbors': '5'
     'RGBD/NeighborLinkRefining': 'false'
     'Rtabmap/DetectionRate': '8'
     'RGBD/LinearUpdate': '0.10'
     'RGBD/AngularUpdate': '0.10'
-    # 'Vis/CorNNDR': '0.5'           # 收紧回环匹配：低NNDR=更严格的描述子匹配，减少假阳性回环。1=不触发任何回环->效果差
-    # 'RGBD/OptimizeFromGraphEnd': 'true'  # 从最新节点优化：错误回环影响范围更小->效果差
-    # 'Rtabmap/LoopThr': '0.20'      # 回环检测阈值：更高=更少但更可靠的回环->效果差
     'RGBD/CreateOccupancyGrid': 'true'
     'queue_size': 30
     # rgbd包含d，不能同时为真
@@ -36,8 +33,6 @@ rtabmap:
     'Reg/Force3DoF': 'true' # 2D SLAM
     # Params previously hardcoded in launch file, now centralized here:
     'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
-    # 'Optimizer/Robust': 'false'       # 关闭鲁棒核：回环修正不会被当作离群值削弱->效果差
-    # 'Optimizer/Iterations': '100'     # 增加优化迭代，让回环修正充分影响全局->效果差
     'grid_size': '20'
     'Grid/Sensor': 'true'
     # pub_loc_pose_only_when_localizing: false  # 强制所有模式发布 /rtabmap/localization_pose（实际发布数据为空，没啥用，关掉节约性能）
