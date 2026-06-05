@@ -1,0 +1,6 @@
+run_id,timestamp,sensor,algo,run_id,coverage_pct,covered_cells,total_cells,elapsed_sec,cpu_avg_pct,mem_avg_pct
+1,1780476637.712,camera,ours,1,89.39,154458,172800,722.7,42.4,44.3
+2,1780478348.453,camera,ours,1,90.22,155892,172800,514.5,40.3,47.0
+3,1780489544.655,camera,ours,1,88.30,152585,172800,554.5,34.3,46.3
+4,1780638632.129,camera,ours,1,90.03,155566,172800,570.5,43.9,49.9
+5,1780639418.529,camera,ours,1,88.23,152464,172800,522.5,46.6,51.3

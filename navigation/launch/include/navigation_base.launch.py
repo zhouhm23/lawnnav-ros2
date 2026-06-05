@@ -74,10 +74,14 @@ def launch_setup(context):
     declare_use_teb_cmd = DeclareLaunchArgument(
         'use_teb', default_value='false')
 
+    declare_controller_param_cmd = DeclareLaunchArgument(
+        'controller_param',
+        default_value=os.path.join(navigation_package_path, 'config/nav2_controller_dwb.yaml'))
+
     if use_teb == 'true':
         controller_param = os.path.join(navigation_package_path, 'config/nav2_controller_teb.yaml')
     else:
-        controller_param = os.path.join(navigation_package_path, 'config/nav2_controller_dwb.yaml')
+        controller_param = LaunchConfiguration('controller_param')
 
 
     load_composable_nodes = LoadComposableNodes(
@@ -144,6 +148,7 @@ def launch_setup(context):
             declare_autostart_cmd,
             declare_container_name_cmd,
             declare_use_teb_cmd,
+            declare_controller_param_cmd,
             load_composable_nodes]
 
 def generate_launch_description():

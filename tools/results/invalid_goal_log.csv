@@ -1,0 +1,4 @@
+timestamp,algo,N_total,N_invalid,invalid_rate_pct,timeout,blocked,rejected,server_unavailable,unknown,detail_file
+2026-06-03 08:47,improved,42,0,0.0,0,0,0,0,0,improved_20260603_084723.csv
+2026-06-03 09:18,improved,42,0,0.0,0,0,0,0,0,improved_20260603_091856.csv
+2026-06-03 12:25,improved,42,0,0.0,0,0,0,0,0,improved_20260603_122518.csv

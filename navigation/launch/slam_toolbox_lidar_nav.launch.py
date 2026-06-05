@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""
+slam_toolbox_lidar_nav.launch.py — (b) 单雷达 slam_toolbox 建图 + 导航/覆盖
+
+模式:
+    localization:=false (默认)  — 建图模式: slam_toolbox SLAM + Nav2 (无需预建地图)
+    localization:=true           — 定位模式: AMCL + 预建 PGM 地图
+
+TF 树:
+  map → odom → base_footprint → base_link
+              → lidar_frame
+
+用法:
+    ros2 launch navigation slam_toolbox_lidar_nav.launch.py                       # 建图
+    ros2 launch navigation slam_toolbox_lidar_nav.launch.py localization:=true map:=my_map  # 导航
+"""
+
+import os
+from ament_index_python.packages import get_package_share_directory
+
+from launch_ros.actions import PushRosNamespace, Node
+from launch import LaunchDescription, LaunchService
+from launch.substitutions import LaunchConfiguration
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, GroupAction, OpaqueFunction, TimerAction
+from launch.conditions import IfCondition, UnlessCondition
+
+
+def launch_setup(context):
+    compiled = os.environ['need_compile']
+    if compiled == 'True':
+        slam_package_path = get_package_share_directory('slam')
+        navigation_package_path = get_package_share_directory('navigation')
+    else:
+        slam_package_path = '/home/ubuntu/ros2_ws/src/slam'
+        navigation_package_path = '/home/ubuntu/ros2_ws/src/navigation'
+
+    sim = LaunchConfiguration('sim', default='false').perform(context)
+    map_name = LaunchConfiguration('map', default='').perform(context)
+    robot_name = LaunchConfiguration('robot_name', default=os.environ['HOST']).perform(context)
+    master_name = LaunchConfiguration('master_name', default=os.environ['MASTER']).perform(context)
+    localization = LaunchConfiguration('localization', default='false')
+    localization_perform = localization.perform(context)
+    use_teb = LaunchConfiguration('use_teb', default='false').perform(context)
+
+    sim_arg = DeclareLaunchArgument('sim', default_value=sim)
+    map_name_arg = DeclareLaunchArgument('map', default_value=map_name)
+    master_name_arg = DeclareLaunchArgument('master_name', default_value=master_name)
+    robot_name_arg = DeclareLaunchArgument('robot_name', default_value=robot_name)
+    localization_arg = DeclareLaunchArgument('localization', default_value=localization_perform)
+    use_teb_arg = DeclareLaunchArgument('use_teb', default_value=use_teb)
+
+    use_sim_time = 'true' if sim == 'true' else 'false'
+    use_namespace = 'true' if robot_name != '/' else 'false'
+    frame_prefix = '' if robot_name == '/' else f'{robot_name}/'
+
+    # ── base: 底盘控制 + 传感器 ──
+    base_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(slam_package_path, 'launch/include/robot.launch.py')),
+        launch_arguments={
+            'sim': sim,
+            'master_name': master_name,
+            'robot_name': robot_name,
+            'use_depth_camera': 'false',
+            'use_lidar': 'true',
+            'enable_odom': 'false',       # 禁用出厂 EKF，用本文件专属 EKF (无 rf2o)
+        }.items(),
+    )
+
+    # ── (b) 单雷达专属 EKF: 仅 odom_raw + IMU，不含 rf2o ──
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[os.path.join('/home/ubuntu/ros2_ws/src/driver/controller/config', 'ekf_lidar.yaml'),
+                    {'use_sim_time': use_sim_time == 'true'}],
+        remappings=[
+            ('/tf', 'tf'),
+            ('/tf_static', 'tf_static'),
+            ('odometry/filtered', 'odom'),
+            ('cmd_vel', 'controller/cmd_vel'),
+        ],
+    )
+
+    # ── SLAM (仅建图模式) ──
+    slam_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(slam_package_path, 'launch/include/slam_toolbox.launch.py')),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'map_frame': f'{frame_prefix}map',
+            'odom_frame': f'{frame_prefix}odom',
+            'base_frame': f'{frame_prefix}base_footprint',
+            'scan_topic': f'{frame_prefix}scan_raw',
+            'enable_save': 'true',
+        }.items(),
+        condition=UnlessCondition(localization),  # 仅在 localization=false 时启动
+    )
+
+    # ── 地图路径 ──
+    if not map_name:
+        map_path = ''
+    elif os.path.isabs(map_name):
+        map_path = map_name
+    else:
+        map_path = os.path.join(slam_package_path, 'maps', map_name + '.yaml')
+
+    # ── Nav2 导航 ──
+    navigation_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'map': map_path,
+            'params_file': os.path.join(navigation_package_path, 'config', 'nav2_params_lidar.yaml'),
+            'namespace': robot_name,
+            'use_namespace': use_namespace,
+            'autostart': 'true',
+            'use_teb': use_teb,
+            'controller_param': os.path.join(navigation_package_path, 'config', 'nav2_controller_lidar.yaml'),
+        }.items(),
+    )
+
+    bringup_launch = GroupAction(
+        actions=[
+            PushRosNamespace(robot_name),
+            base_launch,
+            ekf_node,
+            slam_launch,
+            TimerAction(
+                period=10.0,
+                actions=[navigation_launch],
+            ),
+        ]
+    )
+
+    return [sim_arg, map_name_arg, master_name_arg, robot_name_arg,
+            localization_arg, use_teb_arg, bringup_launch]
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        OpaqueFunction(function=launch_setup)
+    ])
+
+
+if __name__ == '__main__':
+    ld = generate_launch_description()
+    ls = LaunchService()
+    ls.include_launch_description(ld)
+    ls.run()

@@ -1,0 +1,40 @@
+# 这个是相机+雷达建图的参数文件，纯相机建图的参数文件是 rtabmap_params.yaml，雷达相关参数已启用
+rtabmap:
+  ros__parameters:
+    # RTAB-Map parameters (strings are safer for packaged binary)
+    'Grid/RangeMin': '0.04'
+    'Grid/RangeMax': '10.0'
+    'Grid/CellSize': '0.05'
+    # Ground projection / detection
+    # Ground height thresholds (reverted to previous values)
+    'Grid/MinGroundHeight': '-0.20'
+    'Grid/MaxGroundHeight': '0.02'
+    'Grid/MaxGroundAngle': '20'
+    'Grid/MapFrameProjection': 'true'
+    'Grid/NormalsSegmentation': 'true'
+    'Grid/3D': 'true'
+    'Grid/GroundIsObstacle': 'false'
+    'Grid/RayTracing': 'true'
+    'Vis/MaxFeatures': '400'
+    'RGBD/ProximityBySpace': 'true'
+    'RGBD/ProximityPathMaxNeighbors': '5'
+    'RGBD/NeighborLinkRefining': 'false'
+    'Rtabmap/DetectionRate': '8'
+    'RGBD/LinearUpdate': '0.10'
+    'RGBD/AngularUpdate': '0.10'
+    'RGBD/CreateOccupancyGrid': 'true'
+    'queue_size': 30
+    # rgbd包含d，不能同时为真
+    # 这三个不能带引号，否则会被当成字符串而不是布尔值，导致rtabmap无法正确解析参数
+    'subscribe_rgbd': true
+    'subscribe_depth': false
+    'subscribe_scan': true
+    'Reg/Strategy': '1' # Loop Closure Constraint, 0=Visual, 1=ICP (1 requires scan)
+    'Reg/Force3DoF': 'true' # 2D SLAM
+    # Params previously hardcoded in launch file, now centralized here:
+    'Optimizer/GravitySigma': '0'  # Disable imu constraints (2D nav)
+    'grid_size': '20'
+    'Grid/Sensor': 'false' # Set to false to use the laser scan for the occupancy grid instead of the depth camera
+    # pub_loc_pose_only_when_localizing: false  # 强制所有模式发布 /rtabmap/localization_pose（实际发布数据为空，没啥用，关掉节约性能）
+
+ 

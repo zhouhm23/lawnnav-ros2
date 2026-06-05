@@ -3,7 +3,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription, LaunchService
 from launch.substitutions import LaunchConfiguration
-from launch.conditions import IfCondition, UnlessCondition
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction
 from launch_ros.actions import Node
@@ -14,6 +14,8 @@ def launch_setup(context):
     sim = LaunchConfiguration('sim', default='true').perform(context)
     use_joy = LaunchConfiguration('use_joy', default='true').perform(context)
     use_depth_camera = LaunchConfiguration('use_depth_camera', default='false')
+    use_lidar = LaunchConfiguration('use_lidar', default='false')
+    enable_odom = LaunchConfiguration('enable_odom', default='true')
     master_name = LaunchConfiguration('master_name', default='/').perform(context)
     robot_name = LaunchConfiguration('robot_name', default='/').perform(context)
     depth_camera_name = LaunchConfiguration('depth_camera_name', default='depth_cam').perform(context)
@@ -25,6 +27,8 @@ def launch_setup(context):
     depth_camera_name_arg = DeclareLaunchArgument('depth_camera_name', default_value=depth_camera_name)
     use_joy_arg = DeclareLaunchArgument('use_joy', default_value=use_joy)
     use_depth_camera_arg = DeclareLaunchArgument('use_depth_camera', default_value=use_depth_camera)
+    use_lidar_arg = DeclareLaunchArgument('use_lidar', default_value=use_lidar)
+    enable_odom_arg = DeclareLaunchArgument('enable_odom', default_value='true')
     action_name_arg = DeclareLaunchArgument('action_name', default_value=action_name)
 
     max_linear_sim = '0.7'
@@ -81,6 +85,7 @@ def launch_setup(context):
             'map_frame': map_frame,
             'imu_frame': imu_frame,
             'use_sim_time': use_sim_time,
+            'enable_odom': enable_odom,
         }.items()
     )
 
@@ -91,6 +96,7 @@ def launch_setup(context):
             'depth_camera_name': depth_camera_name,
             'tf_prefix': frame_prefix,
         }.items(),
+        condition=IfCondition(use_depth_camera)
     )
 
     lidar_launch = IncludeLaunchDescription(
@@ -101,8 +107,15 @@ def launch_setup(context):
             'scan_topic': scan_topic,
             'scan_raw': scan_raw,
         }.items(),
-        condition=UnlessCondition(use_depth_camera)
+        condition=IfCondition(use_lidar)
     )
+
+    # rf2o_launch 已注释: LD19 精度不达标，保留仅作回滚参考
+    # rf2o_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource(
+    #         os.path.join(controller_package_path, 'launch/rf2o_laser_odometry.launch.py')),
+    #     condition=IfCondition(use_lidar),
+    # )
 
     joystick_control_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(peripherals_package_path, 'launch/joystick_control.launch.py')),
@@ -123,10 +136,12 @@ def launch_setup(context):
     # )
 
     return [
-        sim_arg, master_name_arg, robot_name_arg, depth_camera_name_arg, use_joy_arg, use_depth_camera_arg, action_name_arg,
+        sim_arg, master_name_arg, robot_name_arg, depth_camera_name_arg,
+        use_joy_arg, use_depth_camera_arg, use_lidar_arg, enable_odom_arg, action_name_arg,
         controller_launch,
         depth_camera_launch,
         lidar_launch,
+        # rf2o_launch,  # 已注释
         joystick_control_launch,
         # init_pose_launch,
         robot_state_publisher_node,

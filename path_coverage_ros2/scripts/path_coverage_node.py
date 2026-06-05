@@ -48,7 +48,18 @@ from nav2_msgs.action import NavigateThroughPoses, NavigateToPose, ComputePathTo
 from geometry_msgs.msg import PointStamped, PoseStamped, Twist
 from action_msgs.msg import GoalStatus
 
+from path_coverage.checkpoint import (
+    save_checkpoint, load_checkpoint, clear_checkpoint,
+    register_signal_handlers, CHECKPOINT_FILE,
+)
 
+# GoalTracker: use share directory (works in both src and install)
+_share_dir = get_package_share_directory('path_coverage')
+_scripts_test_dir = os.path.join(_share_dir, 'scripts', 'test')
+if _scripts_test_dir not in sys.path:
+    sys.path.insert(0, _scripts_test_dir)
+# 编译后没问题 
+from goal_tracker import GoalTracker # type: ignore
 
 
 # Keep for backward compatibility; execution-stage cost filtering now uses
@@ -73,6 +84,7 @@ class MapDrive(Node):
 
 		# 使用 sub_node 以便在回调中 spin
 		self.navigate_to_pose_client = ActionClient(self.sub_node, NavigateToPose, 'navigate_to_pose')
+		self.navigate_through_poses_client = ActionClient(self.sub_node, NavigateThroughPoses, 'navigate_through_poses')
 		self.compute_path_to_pose_client = ActionClient(self.sub_node, ComputePathToPose, 'compute_path_to_pose')
 		self.goal_msg = ComputePathToPose.Goal()
 		self.x = None
@@ -119,6 +131,8 @@ class MapDrive(Node):
 		# Static map masking (optional)
 		self.declare_parameter("use_static_map_mask", False)
 		self.declare_parameter("static_map_occupied_thresh", 65)
+		# 最小细胞面积过滤（平方米），小于此面积的cell跳过不执行
+		self.declare_parameter("min_cell_area", 0.0)
 
 		self.global_frame = self.get_parameter("global_frame").get_parameter_value().string_value 
 		self.robot_width = self.get_parameter("robot_width").get_parameter_value().double_value
@@ -136,6 +150,7 @@ class MapDrive(Node):
 		self.show_paths = self.get_parameter("show_paths").get_parameter_value().bool_value
 		self.use_static_map_mask = self.get_parameter("use_static_map_mask").get_parameter_value().bool_value
 		self.static_map_occupied_thresh = self.get_parameter("static_map_occupied_thresh").get_parameter_value().integer_value
+		self.min_cell_area = self.get_parameter("min_cell_area").get_parameter_value().double_value
 		self.static_map = None
 
 		self.create_subscription(PointStamped, "/clicked_point", self.rvizPointReceived, 1)
@@ -151,8 +166,39 @@ class MapDrive(Node):
 
 		self.get_logger().info('parameters::::global_frame::robot_width::costmap_max_non_lethal::boustrophedon_decomposition::border_drive::base_frame::num_points::min_wp_dist.')
 		self.get_logger().info('::::::::::::::'+str(self.global_frame)+'::'+str(self.robot_width)+'::'+str(self.costmap_max_non_lethal)+'::'+str(self.boustrophedon_decomposition)+'::'+str(self.border_drive)+'::'+str(self.base_frame)+'::'+str(self.num_points)+'::'+str(self.min_wp_dist)+'::polygon_expand='+str(self.polygon_expand)+'::coverage_clearance='+str(self.coverage_clearance)+'::expand_max_non_lethal='+str(self.expand_max_non_lethal)+'::drive_max_non_lethal='+str(self.drive_max_non_lethal)+'::show_all_cells='+str(self.show_all_cells)+'::show_paths='+str(self.show_paths)+'::use_static_map_mask='+str(self.use_static_map_mask)+'::static_map_occupied_thresh='+str(self.static_map_occupied_thresh)+'.')
+		# Checkpoint: register signal handlers for crash recovery
+		register_signal_handlers()
+		self._checkpoint_data = load_checkpoint()
+		self._current_cell_idx = 0
+		self._total_cells = 0
+		if self._checkpoint_data:
+			self.get_logger().info(
+				f"[CHECKPOINT] Found resume checkpoint: "
+				f"cell {self._checkpoint_data.get('cell_idx',0)}/{self._checkpoint_data.get('total_cells',0)}, "
+				f"segment {self._checkpoint_data.get('segment_idx',0)}"
+			)
+
 		self.get_logger().info("Path coverage node initialized successfully...")
-	
+
+		# Heartbeat timer for process liveness monitoring (debug mid-run hangs)
+		self._heartbeat_timer = self.create_timer(15.0, self._heartbeat_callback)
+		self._coverage_start_time = None
+		self._cover_state = "idle"
+
+		# 目标不可达率追踪
+		self._goal_tracker = GoalTracker(algo_type="improved")
+
+
+
+
+
+	def _heartbeat_callback(self):
+		"""Periodic liveness heartbeat for debugging mid-run hangs."""
+		if self._coverage_start_time is not None:
+			import time as _time
+			elapsed = _time.time() - self._coverage_start_time
+			self._cover_state = f"covering (elapsed={elapsed:.0f}s)"
+		self.get_logger().info(f"[HEARTBEAT] node alive, state={self._cover_state}")
 
 
 
@@ -702,7 +748,7 @@ class MapDrive(Node):
 					poly_cell = poly_cell.difference(blocked_union)
 				except Exception:
 					pass
-			for poly_part in self._as_polygons(poly_cell, min_area=0.0):
+			for poly_part in self._as_polygons(poly_cell, min_area=self.min_cell_area):
 				c = poly_part.centroid
 				cells.append({"poly": poly_part, "centroid": (c.x, c.y)})
 				cell_polys.append(poly_part)
@@ -722,6 +768,24 @@ class MapDrive(Node):
 		# 最近邻迭代排序：每覆盖完一个细胞后重新选择下一个最近细胞。
 		remaining = list(cells)
 		total_cells = len(remaining)
+		self._total_cells = total_cells
+
+		# Resume logic: skip already-completed cells from checkpoint
+		resume_cell_idx = 0
+		resume_segment_idx = 0
+		if self._checkpoint_data and self._checkpoint_data.get("total_cells") == total_cells:
+			resume_cell_idx = self._checkpoint_data.get("cell_idx", 0)
+			resume_segment_idx = self._checkpoint_data.get("segment_idx", 0)
+			if resume_cell_idx > 0:
+				self.get_logger().info(
+					f"[RESUME] Skipping {resume_cell_idx} completed cells, "
+					f"resuming from cell {resume_cell_idx + 1}"
+				)
+		# We can't skip in nearest-neighbor order; skip by removing from remaining
+		# but nearest-neighbor reorders — simpler: just don't skip, let re-cover happen.
+		# For segment-level resume, store the segment offset.
+		self._resume_segment_idx = resume_segment_idx if resume_cell_idx == 0 else 0
+
 		exec_idx = 1
 		while remaining:
 			ref = _get_ref_pose_xy()
@@ -736,16 +800,57 @@ class MapDrive(Node):
 				)
 
 			next_cell = remaining.pop(next_i)
+			self._current_cell_idx = exec_idx
 			self.get_logger().info(
 				f"Execute cell {exec_idx}/{total_cells}, centroid=({next_cell['centroid'][0]:.2f}, {next_cell['centroid'][1]:.2f})"
 			)
-			try:
-				self.drive_polygon(next_cell["poly"])
-			except Exception as e:
-				self.get_logger().error(f"Cell {exec_idx} failed, skipping. error={e}")
+			if self._coverage_start_time is None:
+				import time as _time
+				self._coverage_start_time = _time.time()
+				self._cover_state = "covering"
+			cell_ok = False
+			for attempt in range(2):
+				try:
+					self.drive_polygon(next_cell["poly"])
+					cell_ok = True
+					break
+				except Exception as e:
+					if attempt == 0:
+						self.get_logger().warn(
+							f"Cell {exec_idx} attempt 1 failed: {e}. Waiting 3s before retry..."
+						)
+						time.sleep(3)
+					else:
+						self.get_logger().error(
+							f"Cell {exec_idx} failed after 2 attempts, skipping. error={e}"
+						)
+			if not cell_ok:
+				self.get_logger().warn(
+					f"Cell {exec_idx}/{total_cells} skipped, coverage may be incomplete."
+				)
+				# Recovery: navigate to cell centroid to re-stabilize localization
+				try:
+					cx_next = next_cell.get("centroid", (0.0, 0.0))
+					self.get_logger().info(
+						f"Recovery: navigating to centroid ({cx_next[0]:.2f},{cx_next[1]:.2f}) "
+						"to re-stabilize..."
+					)
+					import time as _time
+					rec_ok = self.navigate_to_pose(cx_next[0], cx_next[1], 0.0)
+					if not rec_ok:
+						self.get_logger().warn("Recovery navigation cancelled or timed out.")
+					_time.sleep(2.0)
+				except Exception as rec_e:
+					self.get_logger().warn(f"Recovery navigation failed: {rec_e}")
 			exec_idx += 1
+		# Clear checkpoint on normal completion
+		clear_checkpoint()
+		self.get_logger().info("[CHECKPOINT] Coverage completed, checkpoint cleared.")
 		#self.get_logger().info("12: ") # -------------------------------------
+		self._coverage_start_time = None
+		self._cover_state = "idle"
 		self.get_logger().info("Boustrophedon Decomposition completed...")
+		self._goal_tracker.finish()
 
 
 
@@ -913,6 +1018,12 @@ class MapDrive(Node):
 			closest = pose
 		#	self.get_logger().info(f'plan...10 closest: {closest}')
 		self.get_logger().info("get_closest_possible_goal completed...") 
+		if closest is None:
+			self.get_logger().warn(
+				"get_closest_possible_goal: all planned path points blocked by costmap, "
+				"returning original goal as fallback."
+			)
+			return pos_next
 		return (closest.pose.position.x, closest.pose.position.y)
 
 
@@ -963,7 +1074,85 @@ class MapDrive(Node):
 
 
 
+	# ── 路径密化 ──────────────────────────────────────────────────────
+
+	def _densify_path(self, path):
+		"""在长线段上均匀插入中间点，确保相邻点间距 ≤ min_wp_dist。
+
+		只在段长 > min_wp_dist * 2 时插入，过渡段（≈0.34m）自动跳过。
+		"""
+		if len(path) < 2:
+			return path
+		densified = [path[0]]
+		for i in range(len(path) - 1):
+			p1 = np.array(path[i])
+			p2 = np.array(path[i + 1])
+			seg = p2 - p1
+			seg_len = np.linalg.norm(seg)
+			if seg_len > self.min_wp_dist * 2:
+				n_extra = int(seg_len / self.min_wp_dist) - 1
+				for j in range(1, n_extra + 1):
+					alpha = j / (n_extra + 1)
+					intermediate = p1 + alpha * seg
+					densified.append(tuple(intermediate))
+			densified.append(tuple(p2))
+		return densified
+
+	def _group_by_direction(self, path):
+		"""按方向将路径点分组：同向连续段归为一组，转折点单独成组。
+
+		返回: [[(x, y, angle), ...], ...]
+		"""
+		if len(path) < 2:
+			return [[(path[0][0], path[0][1], 0.0)]] if path else []
+
+		groups = []
+		current_group = []
+		prev_angle = None
+
+		for i in range(len(path) - 1):
+			p1 = np.array(path[i])
+			p2 = np.array(path[i + 1])
+			seg = p2 - p1
+			angle = math.atan2(seg[1], seg[0])
+
+			if prev_angle is None:
+				current_group.append((float(path[i][0]), float(path[i][1]), angle))
+			else:
+				# 角度变化 ≥ 30° → 转折点，关闭当前组，当前点成为转折点
+				angle_diff = abs(math.atan2(math.sin(angle - prev_angle),
+				                           math.cos(angle - prev_angle)))
+				if angle_diff >= math.radians(30):
+					# 最后一个点也加到当前组，然后关闭
+					current_group.append((float(path[i][0]), float(path[i][1]), prev_angle))
+					groups.append(current_group)
+					current_group = []
+					# 转折点单独起组
+					current_group.append((float(path[i][0]), float(path[i][1]), angle))
+				else:
+					current_group.append((float(path[i][0]), float(path[i][1]), angle))
+
+			prev_angle = angle
+
+		# 最后一个点
+		if path:
+			last = path[-1]
+			current_group.append((float(last[0]), float(last[1]), prev_angle if prev_angle is not None else 0.0))
+		if current_group:
+			groups.append(current_group)
+
+		return groups
+
 	def drive_path(self, path):
+		try:
+			self._drive_path_impl(path)
+		except Exception as e:
+			import traceback
+			self.get_logger().error(
+				f"drive_path crashed: {e}\\n{traceback.format_exc()}"
+			)
+
+	def _drive_path_impl(self, path):
 		self.get_logger().info("o_o 1: ") # -------------------------------------
 		if len(path) < 2:
 			self.get_logger().warn("drive_path got empty/short path, skip.")
@@ -974,9 +1163,9 @@ class MapDrive(Node):
 		self.get_logger().info("o_o 2: ") # -------------------------------------
 
 		try:
-			initial_pos = self.tfBuffer.lookup_transform(self.global_frame, self.base_frame, rclpy.time.Time()) 
+			initial_pos = self.tfBuffer.lookup_transform(self.global_frame, self.base_frame, rclpy.time.Time())
 		except (TransformException, LookupException, ConnectivityException, ExtrapolationException) as ex:
-			pass 
+			pass
 
 		self.get_logger().info("o_o 3: ") # -------------------------------------
 		if self.x == None and self.y == None:
@@ -984,39 +1173,72 @@ class MapDrive(Node):
 		else:
 			path.insert(0, (self.x, self.y))
 
-		self.get_logger().info("o_o -==----: ")
 		self.get_logger().info("o_o 4: "+ str(path)) # -------------------------------------
 
-		# 使用NavigateToPose动作客户端
-		for pos_last,pos_next in pairwise(path):
-			
+		# 密化：长线段插入中间点，强制全局规划器沿直线走
+		path = self._densify_path(path)
+
+		# 按方向分组：直行条带用 NavigateThroughPoses（无停车），转折点用 NavigateToPose
+		groups = self._group_by_direction(path)
+		self.get_logger().info(f"Path densified to {len(path)} points, grouped into {len(groups)} segments")
+
+		group_idx = 0
+		for group in groups:
 			if not rclpy.ok:
 				return
-			
+			group_idx += 1
 
-			self.get_logger().info("o_o 5: ") # -------------------------------------
-			pos_diff = np.array(pos_next)-np.array(pos_last)
+			# Checkpoint resume: skip already-completed segments in this cell
+			if self._resume_segment_idx > 0 and group_idx <= self._resume_segment_idx:
+				self.get_logger().info(
+					f"[RESUME] Skip segment {group_idx}/{len(groups)} (already completed)"
+				)
+				continue
 
-			self.get_logger().info("o_o 6: ") # -------------------------------------
-			# angle from last to current position
-			angle = atan2(pos_diff[1], pos_diff[0])
+			try:
+				if len(group) <= 1:
+					# 单点（转折/掉头）：NavigateToPose，精确控姿
+					x, y, angle = group[0]
+					self.get_logger().info(
+						f"Segment {group_idx}/{len(groups)}: turn @ ({x:.2f},{y:.2f})")
+					nav_ok = self.navigate_to_pose(x, y, angle)
+					if not nav_ok:
+						self.get_logger().warn(
+							f"NavigateToPose failed to ({x:.2f},{y:.2f}), "
+							"waiting 2s for costmap refresh, then retrying...")
+						time.sleep(2)
+						if rclpy.ok:
+							nav_ok = self.navigate_to_pose(x, y, angle)
+							if not nav_ok:
+								self.get_logger().warn("Retry also failed, continuing.")
+				else:
+					# 多同向点（直行条带）：NavigateThroughPoses，平滑连续
+					self.get_logger().info(
+						f"Segment {group_idx}/{len(groups)}: straight {len(group)} pts "
+						f"({group[0][0]:.2f},{group[0][1]:.2f}) -> "
+						f"({group[-1][0]:.2f},{group[-1][1]:.2f})")
+					nav_ok = self.navigate_through_poses(group)
+					if not nav_ok:
+						self.get_logger().warn(
+							f"NavigateThroughPoses failed (segment {group_idx}), "
+							"falling back to point-by-point NavigateToPose...")
+						for x, y, angle in group:
+							if not rclpy.ok:
+								break
+							pt_ok = self.navigate_to_pose(x, y, angle)
+							if not pt_ok:
+								self.get_logger().warn(
+									f"Fallback waypoint ({x:.2f},{y:.2f}) failed, skipping.")
+			except Exception as e:
+				self.get_logger().error(
+					f"Segment {group_idx} failed: {e}, skipping.")
 
-			self.get_logger().info("o_o 7: ") # -------------------------------------
-			#'''
-			if abs(pos_diff[0]) < self.local_costmap_width/2.0 and abs(pos_diff[1]) < self.local_costmap_height/2.0:
-				# goal is visible in local costmap, check path is clear
-				self.get_logger().info("o_o 8: ") # -------------------------------------
-				tolerance = min(pos_diff[0], pos_diff[1])
-				closest = self.get_closest_possible_goal(pos_last, pos_next, angle, tolerance)
-				self.get_logger().info("o_o 9: ") # -------------------------------------
-				if closest is None:
-					continue
-				pos_next = closest
-			#'''  
-
-			self.get_logger().info("o_o 10: ") # -------------------------------------
-			# 调用NavigateToPose动作来移动到目标点
-			self.navigate_to_pose(pos_next[0], pos_next[1], angle)
+			# Save checkpoint after each segment (segment-level granularity)
+			save_checkpoint(
+				cell_idx=self._current_cell_idx - 1,  # 0-based for checkpoint
+				segment_idx=group_idx,
+				total_cells=self._total_cells,
+			)
 
 		self.get_logger().info("o_o 11: ")
 		if self.show_paths:
@@ -1033,6 +1255,7 @@ class MapDrive(Node):
 		self.get_logger().info(f'Waiting for NavigateToPose action server...')
 		if not self.navigate_to_pose_client.wait_for_server(timeout_sec=5.0):
 			self.get_logger().error('NavigateToPose action server not available after waiting!')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "server_unavailable")
 			return False
 
 		# Create the goal message
@@ -1057,14 +1280,17 @@ class MapDrive(Node):
 			goal_handle = send_goal_future.result()
 		except Exception as e:
 			self.get_logger().error(f"Exception while sending goal: {e}")
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"send_exception:{e}")
 			return False
 
 		if goal_handle is None:
 			self.get_logger().error('Timed out waiting for goal to be accepted by the server.')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "send_timeout")
 			return False
 
 		if not goal_handle.accepted:
 			self.get_logger().error('Goal rejected by server')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "goal_rejected")
 			return False
 
 		self.get_logger().info('Goal accepted by server, waiting for result...')
@@ -1076,24 +1302,114 @@ class MapDrive(Node):
 		except Exception as e:
 			self.get_logger().error(f"Exception while waiting for result: {e}")
 			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"result_exception:{e}")
 			return False
 
 		if result is None:
 			self.get_logger().warn("Navigation timed out!")
 			goal_handle.cancel_goal_async() # Cancel the goal if we timed out
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, "result_timeout")
 			return False
 
 		status = result.status
 		if status == GoalStatus.STATUS_SUCCEEDED:
 			self.get_logger().info('Goal succeeded!')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, True, "")
 			return True
 		else:
 			self.get_logger().warn(f'Goal failed with status: {status}')
+			self._goal_tracker.record_to_pose(x, y, self.x, self.y, False, f"result_status:{status}")
 			return False
 
 
 
 
+
+	# ── NavigateThroughPoses ──────────────────────────────────────────
+
+	def navigate_through_poses(self, poses):
+		"""一次性发送同向路径点列表，机器人平滑穿行不中间停车。
+
+		poses: [(x, y, angle), ...]
+		返回 True/False。
+		"""
+		if not poses:
+			return False
+
+		n_pts = len(poses)
+		x0, y0 = poses[0][0], poses[0][1]
+		xn, yn = poses[-1][0], poses[-1][1]
+
+		self.get_logger().info('Waiting for NavigateThroughPoses action server...')
+		if not self.navigate_through_poses_client.wait_for_server(timeout_sec=5.0):
+			self.get_logger().error('NavigateThroughPoses action server not available!')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "server_unavailable")
+			return False
+
+		goal_msg = NavigateThroughPoses.Goal()
+		for (x, y, angle) in poses:
+			angle_quat = self.euler_to_quaternion(angle, 0, 0)
+			ps = PoseStamped()
+			ps.header.frame_id = self.global_frame
+			ps.header.stamp = self.get_clock().now().to_msg()
+			ps.pose.position.x = x
+			ps.pose.position.y = y
+			ps.pose.position.z = 0.0
+			ps.pose.orientation.x = angle_quat[0]
+			ps.pose.orientation.y = angle_quat[1]
+			ps.pose.orientation.z = angle_quat[2]
+			ps.pose.orientation.w = angle_quat[3]
+			goal_msg.poses.append(ps)
+
+		self.get_logger().info(
+			f'Sending NavigateThroughPoses: {n_pts} poses')
+
+		send_goal_future = self.navigate_through_poses_client.send_goal_async(goal_msg)
+		try:
+			rclpy.spin_until_future_complete(self.sub_node, send_goal_future, timeout_sec=10.0)
+			goal_handle = send_goal_future.result()
+		except Exception as e:
+			self.get_logger().error(f"NavigateThroughPoses send_goal exception: {e}")
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"send_exception:{e}")
+			return False
+
+		if goal_handle is None:
+			self.get_logger().error('NavigateThroughPoses goal not accepted (timeout).')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "send_timeout")
+			return False
+		if not goal_handle.accepted:
+			self.get_logger().error('NavigateThroughPoses goal rejected by server.')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "goal_rejected")
+			return False
+
+		# 超时 = 60s 基础 + 每点 2s
+		timeout = max(60, n_pts * 2)
+		self.get_logger().info(f'NavigateThroughPoses accepted, waiting (timeout={timeout}s)...')
+		result_future = goal_handle.get_result_async()
+		try:
+			rclpy.spin_until_future_complete(self.sub_node, result_future, timeout_sec=timeout)
+			result = result_future.result()
+		except Exception as e:
+			self.get_logger().error(f"NavigateThroughPoses result exception: {e}")
+			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"result_exception:{e}")
+			return False
+
+		if result is None:
+			self.get_logger().warn("NavigateThroughPoses timed out!")
+			goal_handle.cancel_goal_async()
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, "result_timeout")
+			return False
+
+		status = result.status
+		if status == GoalStatus.STATUS_SUCCEEDED:
+			self.get_logger().info('NavigateThroughPoses succeeded!')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, True, "")
+			return True
+		else:
+			self.get_logger().warn(f'NavigateThroughPoses failed with status: {status}')
+			self._goal_tracker.record_through_poses(n_pts, x0, y0, xn, yn, self.x, self.y, False, f"result_status:{status}")
+			return False
 
 	def add_more_waypoints(self, x1, y1, x2, y2, angle_quat):
 		# Calculate the midpoint
@@ -1279,6 +1595,7 @@ def main(args=None):
 	try:
 		rclpy.spin(p)
 	except KeyboardInterrupt:
+		p._goal_tracker.abort()
 		p.get_logger().info('Shutting down gracefully...')
 	except Exception as e:
 		p.get_logger().error(f'Unexpected error: {e}')

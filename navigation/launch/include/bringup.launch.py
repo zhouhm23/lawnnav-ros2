@@ -75,6 +75,8 @@ def launch_setup(context):
         'use_teb', default_value='false',
     )
 
+    controller_param = LaunchConfiguration('controller_param', default='')
+
     # Specify the actions
     bringup_cmd_group = GroupAction([
         Node(
@@ -102,7 +104,8 @@ def launch_setup(context):
                               'use_sim_time': use_sim_time,
                               'autostart': autostart,
                               'params_file': params_file,
-                              'use_teb': use_teb}.items()),
+                              'use_teb': use_teb,
+                              'controller_param': controller_param}.items()),
     ])
 
     return [declare_rtabmap_cmd,

@@ -21,3 +21,8 @@ coverage_evaluator:
 
     # Set <=0 to disable periodic console logs
     log_period_sec: 1.0
+
+    # Output directories for trajectory CSV and costmap NPZ
+    trajectory_log_dir: /home/ubuntu/ros2_ws/src/logs/trajectory/
+    costmap_log_dir: /home/ubuntu/ros2_ws/src/logs/costmap/
+    trajectory_log_enabled: true
