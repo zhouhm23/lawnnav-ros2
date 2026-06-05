@@ -53,10 +53,10 @@ from path_coverage.checkpoint import (
     register_signal_handlers, CHECKPOINT_FILE,
 )
 
-# GoalTracker: sys.path injection for scripts/test/ module
+# GoalTracker: use share directory (works in both src and install)
+_share_dir = get_package_share_directory('path_coverage')
+_scripts_test_dir = os.path.join(_share_dir, 'scripts', 'test')
 import sys as _sys
-_scripts_test_dir = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), 'test')
 if _scripts_test_dir not in _sys.path:
     _sys.path.insert(0, _scripts_test_dir)
 from goal_tracker import GoalTracker
