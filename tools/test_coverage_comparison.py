@@ -185,7 +185,7 @@ def _save_coverage_result(sensor, algo, run_id, coverage_pct, elapsed_sec,
     _ok(f"结果已保存: {csv_path} (run_id={logger.run_id})")
 
 
-def run_one(sensor, algo, run_id):
+def run_one(sensor, algo, run_id, debug=False):
     """执行单次覆盖实验。正常完成返回 True，中断抛 KeyboardInterrupt，失败返回 False。
     仅在正常完成时保存结果数据。
     """
@@ -212,9 +212,12 @@ def run_one(sensor, algo, run_id):
         if not _ensure_lidar_map(map_name):
             return False
 
+    # 日志输出：debug模式写文件，否则丢弃
+    log_out = lambda prefix: open(os.path.join(LOG_DIR, f"{label}_{prefix}.log"), "w") if debug else subprocess.DEVNULL
+
     nav = subprocess.Popen(
         ["bash", "-lc", f"{_source_cmd()} && {NAV_CMD[sensor]}{nav_extra_args}"],
-        stdout=subprocess.DEVNULL,
+        stdout=log_out("nav"),
         stderr=subprocess.STDOUT, env=_ros_env())
     _info(f"navigation 已启动 ({sensor})"); time.sleep(10)
 
@@ -228,7 +231,7 @@ def run_one(sensor, algo, run_id):
     _info("等待 costmap 稳定 (5s)..."); time.sleep(5)
 
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {ALGO_CMD[algo]}"],
-                          stdout=subprocess.DEVNULL,
+                          stdout=log_out("pathcoverage"),
                           stderr=subprocess.STDOUT, env=_ros_env())
     ev = subprocess.Popen(["bash", "-lc",
                            f"{_source_cmd()} && ros2 launch coverage_evaluator coverage_evaluator.launch.py"],
@@ -322,6 +325,7 @@ def run_one(sensor, algo, run_id):
 
 def main():
     p = argparse.ArgumentParser(description="全覆盖性能对照实验")
+    p.add_argument("--debug", action="store_true", help="输出完整日志到文件")
     p.add_argument("--sensor", choices=["camera","lidar","vslam"], help="传感器")
     p.add_argument("--algo", choices=["ours","baseline"], help="覆盖算法")
     p.add_argument("--all", action="store_true", help="全部6组")
@@ -349,7 +353,7 @@ def main():
         count += 1
         _info(f"[{count}/{total_runs}] {sensor}×{algo}")
         try:
-            if run_one(sensor, algo, 1): ok += 1
+            if run_one(sensor, algo, 1, debug=args.debug): ok += 1
         except KeyboardInterrupt: _warn("实验中断"); break
         time.sleep(3)
 
