@@ -140,13 +140,6 @@ def _launch_mapserver(map_name):
     _ok("map_server 已激活")
     return mp
 
-def _publish_rtabmap_map():
-    _info("触发 RTAB-Map 发布 grid_map...")
-    subprocess.run(f"{_source_cmd()} && ros2 service call /rtabmap/publish_map "
-                   f'rtabmap_msgs/srv/PublishMap "{{global_map: true, optimized: true, graph_only: false}}"',
-                   shell=True, executable="/bin/bash",
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-
 def _parse_evaluator_log(sensor, algo, run_id):
     """从 evaluator 日志提取最终覆盖率。匹配 "Final coverage:" 或最后一条 "Coverage:" 行。"""
     log_path = os.path.join(LOG_DIR, f"{sensor}_{algo}_run{run_id}_evaluator.log")
