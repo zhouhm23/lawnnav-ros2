@@ -734,3 +734,8 @@ run4：
 # 6.3
 Grid/3D: true->false 没啥变化
 Vis/MaxFeatures: 800->1000 效果一样差->1600 Vis/CorNNDR:0.5 RGBD/OptimizeFromGraphEnd:true Rtabmap/LoopThr:0.20 还是很差->Rtabmap/LoopThr:0.9启动失败->LoopThr:0.4中途失败，再跑一次前半还行，后半偏差非常大->全注释（包括pose0） 启动失败->取消注释Vis/MaxFeatures:400刚开始有点偏，突然地图修正后效果很好(81%覆盖率)->清理注释、恢复pose0（装样子，实际无效果） 后期大偏差和失败->注释pose0，MaxFeatures:300 Reg/Strategy:0 走一段就全偏了->MaxFeatures:400 Reg/Strategy:1 效果还行，不过后期突然[ERROR] Failed to make progress，不过这是意外问题，不用改任何代码，所以目前预实验可以宣告成功，提交代码准备正式实验
+
+# 6.5
+改成subscribe_rgbd:false subscribe_depth:true 效果非常差，没触发任何回环修正；
+Reg/Strategy:1->0 odom突然崩溃；
+Vis/MaxFeatures:400->200 中期效果好点，但后期崩了，可能是全图回环修正触发太多；

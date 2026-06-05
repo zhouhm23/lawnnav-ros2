@@ -58,7 +58,7 @@ def _source_cmd():
 
 def _ros_env():
     env = os.environ.copy()
-    env["RCUTILS_LOGGING_SEVERITY_THRESHOLD"] = "ERROR"
+    env["RCUTILS_LOGGING_SEVERITY_THRESHOLD"] = "FATAL"
     env["RCUTILS_CONSOLE_OUTPUT_FORMAT"] = "[{severity}] {message}"
     return env
 
@@ -214,7 +214,7 @@ def run_one(sensor, algo, run_id):
 
     nav = subprocess.Popen(
         ["bash", "-lc", f"{_source_cmd()} && {NAV_CMD[sensor]}{nav_extra_args}"],
-        stdout=open(os.path.join(LOG_DIR, f"{label}_nav.log"), "w"),
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT, env=_ros_env())
     _info(f"navigation 已启动 ({sensor})"); time.sleep(10)
 
@@ -228,7 +228,7 @@ def run_one(sensor, algo, run_id):
     _info("等待 costmap 稳定 (5s)..."); time.sleep(5)
 
     pc = subprocess.Popen(["bash", "-lc", f"{_source_cmd()} && {ALGO_CMD[algo]}"],
-                          stdout=open(os.path.join(LOG_DIR, f"{label}_pathcoverage.log"), "w"),
+                          stdout=subprocess.DEVNULL,
                           stderr=subprocess.STDOUT, env=_ros_env())
     ev = subprocess.Popen(["bash", "-lc",
                            f"{_source_cmd()} && ros2 launch coverage_evaluator coverage_evaluator.launch.py"],
