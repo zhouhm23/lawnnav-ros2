@@ -82,6 +82,13 @@ def _stop_ros():
         time.sleep(1.5)
 
 def _cleanup(*procs):
+    # 先归零速度再杀进程，防止车失控滑行
+    try:
+        subprocess.run(f'{_source_cmd()} && ros2 topic pub --once /cmd_vel '
+                       f'geometry_msgs/msg/Twist "{{linear: {{x:0,y:0,z:0}}, angular: {{x:0,y:0,z:0}}}}"',
+                       shell=True, executable="/bin/bash",
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except Exception: pass
     for p in procs:
         if p and p.poll() is None: p.terminate()
         try:

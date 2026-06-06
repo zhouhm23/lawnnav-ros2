@@ -100,7 +100,7 @@ def launch_setup(context):
 
     # 覆盖模式使用独立Nav2参数文件（三种方案共用同一coverage配置）
     nav2_params_file = os.path.join(navigation_package_path, 'config',
-        'nav2_params_coverage.yaml' if coverage_mode.perform(context) == 'true' else 'nav2_params_vslam.yaml')
+        'nav2_params_coverage_vslam.yaml' if coverage_mode.perform(context) == 'true' else 'nav2_params_vslam.yaml')
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(navigation_package_path, 'launch/include/bringup.launch.py')),

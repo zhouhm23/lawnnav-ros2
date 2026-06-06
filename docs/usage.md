@@ -34,6 +34,10 @@ bash launcher/start.sh              # Shell 兼容包装
 ```bash
 # 建议别用sudo，以免杀了关键进程和终端本身
 ~/.stop_ros.sh 
+
+# 紧急停止：归零速度（车失控/程序退出后残留运动）
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x:0,y:0,z:0}, angular: {x:0,y:0,z:0}}"
+
 rm -f /home/ubuntu/.ros/rtabmap.db
 # (a) 单相机
 ros2 launch navigation rtabmap_camera_nav.launch.py                    # 建图 (localization:=false)
@@ -68,7 +72,7 @@ ros2 launch coverage_evaluator coverage_evaluator.launch.py # 监控覆盖率（
 ### 终端 3：
 ```bash
 cd ros2_ws/ && colcon build --packages-select 包名 && source install/local_setup.sh # 修改包后要重新编译
-cd ros2_ws/ && colcon build --packages-select navigation controller slam && source install/local_setup.sh # 常用
+cd ros2_ws/ && colcon build --packages-select navigation && source install/local_setup.sh # 常用
 
 ros2 launch path_coverage path_coverage.launch.py # 在 RViz 中用 Publish Point 点击圈选区域，自动开始覆盖
 ```
