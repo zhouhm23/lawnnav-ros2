@@ -75,7 +75,7 @@ def _stop_ros():
     except Exception: pass
     s = Path.home() / ".stop_ros.sh"
     if s.exists():
-        subprocess.call(["sudo", "bash", str(s)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.call([ "bash", str(s)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1.5)
     else:
         subprocess.call(["pkill", "-f", "ros2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

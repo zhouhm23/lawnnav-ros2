@@ -26,8 +26,8 @@
     #map_start_at_dock: true
 
     debug_logging: false
-    throttle_scans: 1
-    transform_publish_period: 0.02 #if 0 never publishes odometry
+    throttle_scans: 2  # 隔帧处理，slam_toolbox CPU减半
+    transform_publish_period: 0.05 # 20Hz TF发布，50Hz→20Hz省CPU
     map_update_interval: 0.2
     resolution: 0.05
     max_laser_range: 12.0 #for rastering images
@@ -42,7 +42,7 @@
     use_scan_barycenter: true
     minimum_travel_distance: 0.1
     minimum_travel_heading: 0.5
-    scan_buffer_size: 20
+    scan_buffer_size: 10  # 20→10，减少匹配搜索范围
     scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
