@@ -64,7 +64,6 @@ WP_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/waypoints"
 TRAJ_LOG_DIR = "/home/ubuntu/ros2_ws/src/logs/trajectory"
 CTE_SAMPLE_HZ = 2.0              # CTE 轨迹采样频率
 NAV_STARTUP_WAIT = 15.0       # 建图+导航启动等待 (lidar 保底15s)
-CAR_HALF_LENGTH = 0.106       # 车体半长 (m)，车中心→车尾中点的偏移
 WS_ROOT = Path(__file__).resolve().parent.parent
 
 # 各传感器独立的建图+导航启动命令
@@ -344,12 +343,9 @@ class SlamNavTest(Node):
                     self._stop_navigation()
                     return
 
-                gt_x_p = exp_x + dx   # 用户输入的是车尾中点位置
+                gt_x_p = exp_x + dx   # 用户直接测量车中心点（与 SLAM base_footprint 一致）
                 gt_y_p = exp_y + dy
                 gt_yaw_deg_p = yaw_actual
-                # 车尾中点 → 车中心偏移 (SLAM 报告 base_footprint 即车中心)
-                gt_x_p += CAR_HALF_LENGTH * math.sin(math.radians(gt_yaw_deg_p))
-                gt_y_p += CAR_HALF_LENGTH * math.cos(math.radians(gt_yaw_deg_p))
                 self.get_logger().info(
                     f"  实际论文坐标: ({gt_x_p:.3f}, {gt_y_p:.3f}, {gt_yaw_deg_p:.1f}°)")
 
