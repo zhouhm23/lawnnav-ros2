@@ -2,3 +2,4 @@ timestamp,algo,N_total,N_invalid,invalid_rate_pct,timeout,blocked,rejected,serve
 2026-06-03 08:47,improved,42,0,0.0,0,0,0,0,0,improved_20260603_084723.csv
 2026-06-03 09:18,improved,42,0,0.0,0,0,0,0,0,improved_20260603_091856.csv
 2026-06-03 12:25,improved,42,0,0.0,0,0,0,0,0,improved_20260603_122518.csv
+2026-06-07 07:32,improved,48,3,6.2,1,0,0,0,2,improved_20260607_073220.csv

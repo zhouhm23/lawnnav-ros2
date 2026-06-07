@@ -78,7 +78,7 @@ class Launcher:
         self._running = True
         self._current_mode: str = "none"
         self._first_time = True
-        self._non_interactive = False  # set by --non-interactive, skip sudo stop
+        self._non_interactive = False  # set by --non-interactive, skip  stop
 
     # ── 输出 ──────────────────────────────────────────────────────────
 
@@ -220,15 +220,15 @@ class Launcher:
         except Exception:
             pass  # 速度归零失败不阻塞
 
-        # 2. sudo 执行系统级 stop 脚本（需要无密码 sudo 权限）
+        # 2.  执行系统级 stop 脚本（需要无密码  权限）
         #    非交互模式下跳过 — 调用方（如 test 脚本）负责系统级清理
         if self._non_interactive:
-            self._info('非交互模式，跳过 sudo stop_ros（由调用方负责清理）')
+            self._info('非交互模式，跳过  stop_ros（由调用方负责清理）')
             return
         stop_script = Path.home() / '.stop_ros.sh'
         if stop_script.exists():
-            self._info('执行 sudo ~/.stop_ros.sh ...')
-            subprocess.call(['sudo', 'bash', str(stop_script)],
+            self._info('执行  ~/.stop_ros.sh ...')
+            subprocess.call(['bash', str(stop_script)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(1.5)
         else:
@@ -710,7 +710,7 @@ def _non_interactive_run(launcher: Launcher, args: argparse.Namespace) -> None:
         print("非交互模式需要指定命令，如: python3 launcher/start.py --non-interactive coverage test_map test_180x240")
         sys.exit(1)
 
-    # Mark non-interactive so _run_stop_ros skips sudo
+    # Mark non-interactive so _run_stop_ros skips 
     launcher._non_interactive = True
 
     cmd = args.command[0].lower()
