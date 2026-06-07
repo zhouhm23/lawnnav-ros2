@@ -379,12 +379,16 @@ class SlamNavTest(Node):
         self.get_logger().info("所有测试完成 ✓")
 
     def _save_perf_results(self):
-        """仅在成功时保存性能采样。"""
+        """仅在成功时保存性能采样（均值 + 标准差）。"""
         if not self._cpu_samples:
             return
-        avg_cpu = sum(self._cpu_samples) / len(self._cpu_samples)
-        avg_mem = sum(self._mem_samples) / len(self._mem_samples)
-        self.get_logger().info(f"平均性能: CPU {avg_cpu:.1f}%  MEM {avg_mem:.1f}% ({len(self._cpu_samples)} 次采样)")
+        n = len(self._cpu_samples)
+        avg_cpu = sum(self._cpu_samples) / n
+        avg_mem = sum(self._mem_samples) / n
+        std_cpu = (sum((x - avg_cpu)**2 for x in self._cpu_samples) / n) ** 0.5 if n > 1 else 0.0
+        std_mem = (sum((x - avg_mem)**2 for x in self._mem_samples) / n) ** 0.5 if n > 1 else 0.0
+        self.get_logger().info(
+            f"性能: CPU {avg_cpu:.1f}±{std_cpu:.1f}%  MEM {avg_mem:.1f}±{std_mem:.1f}% (n={n})")
 
         # 原始采样 → logs/
         perf_path = os.path.join(PERF_LOG_DIR, f"{self._sensor}_perf.csv")
@@ -394,15 +398,16 @@ class SlamNavTest(Node):
         except PermissionError:
             self.get_logger().error(f"无写入权限: {perf_path}")
 
-        # 均值 → tools/results/
+        # 汇总 → tools/results/
         try:
-            headers = ["timestamp", "sensor", "avg_cpu_pct", "avg_mem_pct", "num_samples"]
+            headers = ["timestamp", "sensor",
+                       "cpu_mean_pct", "cpu_std_pct", "mem_mean_pct", "mem_std_pct", "num_samples"]
             logger = AppendingCSVLogger(CSV_PERF_PATH, headers)
             row = [f"{time.time():.3f}", self._sensor,
-                   f"{avg_cpu:.1f}", f"{avg_mem:.1f}", str(len(self._cpu_samples))]
+                   f"{avg_cpu:.1f}", f"{std_cpu:.1f}", f"{avg_mem:.1f}", f"{std_mem:.1f}", str(n)]
             logger.add_row(row)
             logger.close()
-            self.get_logger().info(f"性能均值已保存: {CSV_PERF_PATH}")
+            self.get_logger().info(f"性能汇总已保存: {CSV_PERF_PATH}")
         except PermissionError:
             self.get_logger().error(f"无写入权限: {CSV_PERF_PATH}")
 
@@ -639,45 +644,87 @@ class SlamNavTest(Node):
         self._save_rpe_results()
 
     def _save_rpe_results(self):
-        """三角形 3 段 RPE: 3→4, 4→1, 1→3。"""
+        """三角形 3 段 RPE（含标准差、相对误差、闭合误差）。"""
         N = len(self._gt_poses_map)
         if N < 2:
             return
 
         gt_map = self._gt_poses_map  # [(pt3), (pt4), (pt1)]
-        # 对应 SLAM: slam[1]=pt3, slam[2]=pt4, slam[3]=pt1(闭合)
         sc = [self._slam_poses[1], self._slam_poses[2], self._slam_poses[3]]
 
-        seg_errors_pos, seg_errors_yaw = [], []
+        # ── 每段绝对误差 ──
+        seg_pos, seg_yaw = [], []
+        seg_gt_len = []  # GT 线段长度 (m)
         for i in range(N):
             j = (i + 1) % N
-            sx0, sy0, syaw0 = sc[i]
-            sx1, sy1, syaw1 = sc[j]
-            gx0, gy0, gyaw0 = gt_map[i]
-            gx1, gy1, gyaw1 = gt_map[j]
-            e_pos = math.sqrt(((sx1 - sx0) - (gx1 - gx0))**2 + ((sy1 - sy0) - (gy1 - gy0))**2)
+            sx0, sy0, syaw0 = sc[i]; sx1, sy1, syaw1 = sc[j]
+            gx0, gy0, gyaw0 = gt_map[i]; gx1, gy1, gyaw1 = gt_map[j]
+            e_pos = math.hypot((sx1 - sx0) - (gx1 - gx0), (sy1 - sy0) - (gy1 - gy0))
             e_yaw = abs(normalize_angle(normalize_angle(syaw1 - syaw0) - normalize_angle(gyaw1 - gyaw0)))
-            seg_errors_pos.append(e_pos)
-            seg_errors_yaw.append(e_yaw)
+            seg_pos.append(e_pos)
+            seg_yaw.append(e_yaw)
+            seg_gt_len.append(math.hypot(gx1 - gx0, gy1 - gy0))
 
-        mean_pos = sum(seg_errors_pos) / len(seg_errors_pos)
-        mean_yaw = sum(seg_errors_yaw) / len(seg_errors_yaw)
+        n_seg = len(seg_pos)
+        mean_pos = sum(seg_pos) / n_seg
+        mean_yaw = sum(seg_yaw) / n_seg
+        std_pos = (sum((x - mean_pos)**2 for x in seg_pos) / n_seg) ** 0.5 if n_seg > 1 else 0.0
+        std_yaw = (sum((x - mean_yaw)**2 for x in seg_yaw) / n_seg) ** 0.5 if n_seg > 1 else 0.0
+
+        # ── 每段相对误差 (% of 实际轨迹路程) ──
+        # _segment_trajectories: [1→3, 3→4, 4→1]; seg_pos: [3→4, 4→1, 1→3]
+        seg_traj_len = [0.0, 0.0, 0.0]
+        if len(self._segment_trajectories) >= n_seg:
+            raw = []
+            for traj in self._segment_trajectories[:n_seg]:
+                pl = 0.0
+                for k in range(1, len(traj)):
+                    pl += math.hypot(traj[k][1] - traj[k-1][1], traj[k][2] - traj[k-1][2])
+                raw.append(pl)
+            # raw: [1→3, 3→4, 4→1] → 重排为 [3→4, 4→1, 1→3]
+            seg_traj_len = [raw[1], raw[2], raw[0]]
+        else:
+            seg_traj_len = seg_gt_len
+        seg_rel_pos = [seg_pos[i] / seg_traj_len[i] * 100.0 for i in range(n_seg)]
+        mean_rel = sum(seg_rel_pos) / n_seg
+        std_rel = (sum((x - mean_rel)**2 for x in seg_rel_pos) / n_seg) ** 0.5 if n_seg > 1 else 0.0
+
+        # ── 总路程（从实际轨迹计算，因为 1→3 有避障曲线）──
+        total_path_len = 0.0
+        if len(self._segment_trajectories) >= 3:
+            for traj in self._segment_trajectories[:3]:
+                for k in range(1, len(traj)):
+                    total_path_len += math.hypot(traj[k][1] - traj[k-1][1],
+                                                 traj[k][2] - traj[k-1][2])
+
         self.get_logger().info(
-            f"\nRPE 汇总: 位置 {mean_pos:.4f} m  航向 {math.degrees(mean_yaw):.2f}°")
+            f"\nRPE 汇总: 位置 {mean_pos:.4f}±{std_pos:.4f} m  航向 {math.degrees(mean_yaw):.2f}±{math.degrees(std_yaw):.2f}°\n"
+            f"  总路程 {total_path_len:.3f} m")
 
         headers = ["timestamp", "sensor",
-                   "seg_3to4_pos_m", "seg_3to4_yaw_deg",
-                   "seg_4to1_pos_m", "seg_4to1_yaw_deg",
-                   "seg_1to3_pos_m", "seg_1to3_yaw_deg",
-                   "mean_pos_m", "mean_yaw_deg",
+                   "seg_3to4_pos_m", "seg_3to4_yaw_deg", "seg_3to4_rel_pct",
+                   "seg_4to1_pos_m", "seg_4to1_yaw_deg", "seg_4to1_rel_pct",
+                   "seg_1to3_pos_m", "seg_1to3_yaw_deg", "seg_1to3_rel_pct",
+                   "mean_pos_m", "std_pos_m", "mean_yaw_deg", "std_yaw_deg",
+                   "mean_rel_pct", "std_rel_pct",
+                   "closure_rel_pct",
+                   "total_path_len_m",
                    "collision_1to3"]
         logger = AppendingCSVLogger(CSV_RPE_PATH, headers)
         row = [f"{time.time():.3f}", self._sensor]
         for i in range(3):
-            row.append(f"{seg_errors_pos[i]:.4f}")
-            row.append(f"{math.degrees(seg_errors_yaw[i]):.4f}")
+            row.append(f"{seg_pos[i]:.4f}")
+            row.append(f"{math.degrees(seg_yaw[i]):.4f}")
+            row.append(f"{seg_rel_pos[i]:.2f}")
         row.append(f"{mean_pos:.4f}")
+        row.append(f"{std_pos:.4f}")
         row.append(f"{math.degrees(mean_yaw):.4f}")
+        row.append(f"{math.degrees(std_yaw):.4f}")
+        row.append(f"{mean_rel:.2f}")
+        row.append(f"{std_rel:.2f}")
+        closure_rel = seg_pos[1] / total_path_len * 100.0 if total_path_len > 0 else 0.0
+        row.append(f"{closure_rel:.4f}")
+        row.append(f"{total_path_len:.3f}")
         collision_val = self._collisions[0] if self._collisions else 0
         row.append(str(collision_val))
         logger.add_row(row)
